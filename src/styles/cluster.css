@@ -1,0 +1,135 @@
+/* Marker Cluster Styles for Massive Scale (30k+ stations) */
+.custom-cluster {
+  background: transparent !important;
+  border: none !important;
+}
+
+.cluster-marker {
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: bold;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  border: 2px solid white;
+  transition: all 0.2s ease;
+  position: relative;
+}
+
+.cluster-marker:hover {
+  transform: scale(1.1);
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.2);
+}
+
+/* Micro clusters (1-9 stations) */
+.cluster-micro {
+  width: 28px;
+  height: 28px;
+  background: linear-gradient(135deg, #10b981, #059669);
+  font-size: 11px;
+  color: white;
+}
+
+/* Small clusters (10-99 stations) */
+.cluster-small {
+  width: 36px;
+  height: 36px;
+  background: linear-gradient(135deg, #3b82f6, #1d4ed8);
+  font-size: 12px;
+  color: white;
+}
+
+/* Medium clusters (100-999 stations) */
+.cluster-medium {
+  width: 44px;
+  height: 44px;
+  background: linear-gradient(135deg, #f59e0b, #d97706);
+  font-size: 14px;
+  color: white;
+}
+
+/* Large clusters (1k-9.9k stations) */
+.cluster-large {
+  width: 52px;
+  height: 52px;
+  background: linear-gradient(135deg, #ef4444, #dc2626);
+  font-size: 15px;
+  color: white;
+  font-weight: 800;
+}
+
+/* XL clusters (10k-24.9k stations) */
+.cluster-xlarge {
+  width: 60px;
+  height: 60px;
+  background: linear-gradient(135deg, #7c3aed, #5b21b6);
+  font-size: 16px;
+  color: white;
+  font-weight: 800;
+  border: 3px solid white;
+}
+
+/* XXL clusters (25k+ stations) */
+.cluster-xxlarge {
+  width: 68px;
+  height: 68px;
+  background: linear-gradient(135deg, #ec4899, #be185d);
+  font-size: 18px;
+  color: white;
+  font-weight: 900;
+  border: 3px solid white;
+  box-shadow: 0 6px 20px rgba(236, 72, 153, 0.4);
+}
+
+/* Mega clusters (50k+ stations) - theoretical maximum */
+.cluster-mega {
+  width: 76px;
+  height: 76px;
+  background: linear-gradient(135deg, #fbbf24, #f59e0b);
+  font-size: 20px;
+  color: white;
+  font-weight: 900;
+  border: 4px solid white;
+  box-shadow: 0 8px 25px rgba(251, 191, 36, 0.5);
+  animation: mega-pulse 2s ease-in-out infinite;
+}
+
+@keyframes mega-pulse {
+  0%, 100% {
+    transform: scale(1);
+    box-shadow: 0 8px 25px rgba(251, 191, 36, 0.5);
+  }
+  50% {
+    transform: scale(1.05);
+    box-shadow: 0 12px 30px rgba(251, 191, 36, 0.7);
+  }
+}
+
+.cluster-count {
+  pointer-events: none;
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
+}
+
+/* Custom marker styling */
+.custom-radio-marker {
+  filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.2));
+  transition: all 0.2s ease;
+}
+
+.custom-radio-marker:hover {
+  filter: drop-shadow(0 4px 8px rgba(0, 0, 0, 0.3));
+  transform: scale(1.1);
+}
+
+/* Zoom-based clustering adjustments */
+.leaflet-zoom-animated .cluster-marker {
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* Performance optimization for large clusters */
+.cluster-xlarge .cluster-count,
+.cluster-xxlarge .cluster-count,
+.cluster-mega .cluster-count {
+  font-feature-settings: 'tnum' 1; /* Tabular numbers for consistent spacing */
+} 
