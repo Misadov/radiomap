@@ -1,10 +1,12 @@
 
 
+
 # *This project was created using [Cursor AI](https://cursor.com/) for personal use. May contain bugs!*
 
-# RadioMap - Discover World Radio Stations
 
-#[Online version] (https://radiomap.vercel.app)
+# **[Online version](https://radiomap.vercel.app)**
+
+# RadioMap - Discover World Radio Stations
 
 A modern web application for discovering and listening to radio stations from around the world. Built with Next.js, TypeScript, and Tailwind CSS.
 
