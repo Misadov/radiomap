@@ -1,13 +1,16 @@
 'use client';
 
-import { useState, useCallback, useMemo, memo, useEffect, useRef } from 'react';
+import { useState, useCallback, useMemo, useEffect } from 'react';
 import dynamic from 'next/dynamic';
 import { RadioStation } from '@/types/radio';
 import { useAudioPlayer } from '@/hooks/useAudioPlayer';
 import { useFavorites } from '@/hooks/useFavorites';
 import { useStationData } from '@/contexts/StationDataContext';
-import { MapPin, Play, Radio, Loader, Heart, Pause } from 'lucide-react';
-import StationImage from '@/components/shared/StationImage';
+import { Loader, Radio } from 'lucide-react';
+import StationPopup from '@/components/map/StationPopup';
+import useSupercluster from 'use-supercluster';
+import { useMap, useMapEvents } from 'react-leaflet';
+import L from 'leaflet';
 import '@/styles/cluster.css';
 
 // Dynamically import map components to avoid SSR issues
@@ -15,7 +18,6 @@ const MapContainer = dynamic(() => import('react-leaflet').then(mod => mod.MapCo
 const TileLayer = dynamic(() => import('react-leaflet').then(mod => mod.TileLayer), { ssr: false });
 const Marker = dynamic(() => import('react-leaflet').then(mod => mod.Marker), { ssr: false });
 const Popup = dynamic(() => import('react-leaflet').then(mod => mod.Popup), { ssr: false });
-const MarkerClusterGroup = dynamic(() => import('react-leaflet-cluster'), { ssr: false });
 
 // Wrapper that gets audio state without affecting marker memoization
 const StationPopupWrapper = ({ station, onPlay, onToggleFavorite, isFav }: {
@@ -25,195 +27,161 @@ const StationPopupWrapper = ({ station, onPlay, onToggleFavorite, isFav }: {
   isFav: boolean;
 }) => {
   const { state } = useAudioPlayer();
+  const isPlaying = state.currentStation?.stationuuid === station.stationuuid && state.isPlaying;
+  const isLoading = state.isLoading && state.currentStation?.stationuuid === station.stationuuid;
+  
+  // If this station is currently playing (or loading), use the rich data from the player state
+  // (which contains the resolved faviconUrl, full tags, etc.)
+  const displayStation = (isPlaying || isLoading) && state.currentStation 
+    ? { ...station, ...state.currentStation } 
+    : station;
+
+  if (isPlaying) {
+     console.log('Popup render for active station:', displayStation.name, 'Favicon:', displayStation.favicon);
+  }
   
   return (
     <StationPopup
-      station={station}
+      station={displayStation}
       onPlay={onPlay}
       onToggleFavorite={onToggleFavorite}
-      isPlaying={state.currentStation?.stationuuid === station.stationuuid && state.isPlaying}
-      isLoading={state.isLoading && state.currentStation?.stationuuid === station.stationuuid}
+      isPlaying={isPlaying}
+      isLoading={isLoading}
       isFav={isFav}
     />
   );
 };
 
-// Beautiful station popup with full features (but audio state passed as props)
-const StationPopup = memo(({ station, onPlay, onToggleFavorite, isPlaying, isLoading, isFav }: {
-  station: RadioStation;
-  onPlay: (station: RadioStation) => void;
-  onToggleFavorite: (station: RadioStation) => void;
-  isPlaying: boolean;
-  isLoading: boolean;
-  isFav: boolean;
-}) => (
-  <div className="p-3 min-w-[280px] bg-gray-800 rounded-lg">
-    <div className="flex items-start space-x-4">
-      {/* Station Image */}
-      <div className="flex-shrink-0">
-        <StationImage station={station} />
-      </div>
-      
-      {/* Station Info */}
-      <div className="flex-1 min-w-0">
-        <h3 className="font-semibold text-white text-base truncate mb-1">
-          {station.name}
-        </h3>
-        <p className="text-sm text-gray-300 mb-2">
-          {station.country}
-          {station.language && ` • ${station.language}`}
-        </p>
-        {station.geocoded_location && (
-          <p className="text-xs text-blue-400 mb-2 flex items-center">
-            🌍 {station.geocoded_location}
-            <span className="ml-1 text-gray-500">({station.geocoded_type})</span>
-          </p>
-        )}
-        {station.tags && (
-          <p className="text-xs text-gray-400 mb-3 line-clamp-2">
-            {station.tags.split(',').slice(0, 3).join(', ')}
-          </p>
-        )}
-        
-        {/* Stats and Action Buttons */}
-        <div className="flex items-center justify-between mb-3">
-          <div className="text-xs text-gray-400 space-y-1">
-            <div className="flex items-center">
-              <span>👥 {station.votes} votes</span>
-            </div>
-            {station.bitrate && (
-              <div className="flex items-center">
-                <span>🎵 {station.bitrate} kbps</span>
-              </div>
-            )}
-          </div>
-          
-          <div className="flex items-center space-x-2">
-            <button
-              onClick={(e) => {
-                e.preventDefault();
-                e.stopPropagation();
-                onToggleFavorite(station);
-              }}
-              className={`flex items-center justify-center w-10 h-10 rounded-lg transition-all duration-200 ${
-                isFav
-                  ? 'bg-red-500 text-white hover:bg-red-600'
-                  : 'bg-gray-700 text-gray-300 hover:bg-red-500 hover:text-white'
-              }`}
-              title={isFav ? 'Remove from favorites' : 'Add to favorites'}
-            >
-              <Heart className={`w-4 h-4 ${isFav ? 'fill-current' : ''}`} />
-            </button>
+// Icons creation
+const createIcons = () => {
+  if (typeof window === 'undefined') return { station: null, cluster: null };
+  
+  const stationIcon = L.divIcon({
+    html: `<div class="custom-radio-marker"></div>`,
+    className: 'custom-radio-marker-container',
+    iconSize: [16, 16],
+    iconAnchor: [8, 8],
+    popupAnchor: [0, -10],
+  });
 
-            <button
-              onClick={(e) => {
-                e.preventDefault();
-                e.stopPropagation();
-                console.log('Playing station from map:', station.name);
-                onPlay(station);
-              }}
-              disabled={isLoading}
-              className={`flex items-center justify-center w-12 h-12 rounded-xl transition-all duration-200 shadow-lg hover:shadow-xl transform hover:scale-105 ${
-                isPlaying
-                  ? 'bg-gradient-to-r from-primary-500 to-primary-600 text-white pulse-glow'
-                  : 'bg-gradient-to-r from-gray-700 to-gray-600 hover:from-primary-500 hover:to-primary-600 text-gray-300 hover:text-white'
-              } disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none`}
-            >
-              {isLoading ? (
-                <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
-              ) : isPlaying ? (
-                <Pause className="w-5 h-5" />
-              ) : (
-                <Play className="w-5 h-5 ml-0.5" />
-              )}
-            </button>
-          </div>
-        </div>
-        
-        {/* Website Link */}
-        {station.homepage && (
-          <a
-            href={station.homepage}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="text-xs text-primary-400 hover:text-primary-300 transition-colors inline-flex items-center"
-            onClick={(e) => e.stopPropagation()}
-          >
-            🌐 Visit Website →
-          </a>
-        )}
-      </div>
-    </div>
-  </div>
-));
+  const clusterIcon = (count: number, sizeClass: string) => L.divIcon({
+    html: `<div class="custom-cluster-icon ${sizeClass}">${count}</div>`,
+    className: 'cluster-wrapper',
+    iconSize: L.point(40, 40, true),
+  });
 
-
-
-// Custom marker icon
-const createCustomIcon = () => {
-  if (typeof window !== 'undefined') {
-    const L = require('leaflet');
-    return L.divIcon({
-      html: `<div class="w-6 h-6 bg-primary-500 rounded-full border-2 border-white shadow-lg flex items-center justify-center">
-               <svg class="w-3 h-3 text-white" fill="currentColor" viewBox="0 0 24 24">
-                 <path d="M3.9 12c0-1.71 1.39-3.1 3.1-3.1h4V7H7c-2.76 0-5 2.24-5 5s2.24 5 5 5h4v-1.9H7c-1.71 0-3.1-1.39-3.1-3.1zM8 13h8v-2H8v2zm9-6h-4v1.9h4c1.71 0 3.1 1.39 3.1 3.1s-1.39 3.1-3.1 3.1h-4V17h4c2.76 0 5-2.24 5-5s-2.24-5-5-5z"/>
-               </svg>
-             </div>`,
-      className: 'custom-radio-marker',
-      iconSize: [24, 24],
-      iconAnchor: [12, 12],
-      popupAnchor: [0, -12],
-    });
-  }
-  return null;
+  return { station: stationIcon, cluster: clusterIcon };
 };
 
-// Component visibility hook
-function useComponentVisibility() {
-  const [isVisible, setIsVisible] = useState(true);
-  const componentRef = useRef<HTMLDivElement>(null);
+// --- INNER COMPONENT FOR RENDERING CLUSTERS ---
+function ClustersLayer({ points, setBounds, setZoom, onStationPlay, onToggleFavorite, isFavorite }: any) {
+  const map = useMap();
+  const [bounds, setLocalBounds] = useState<any>(null);
+  const [zoom, setLocalZoom] = useState(3);
+  const [icons, setIcons] = useState<any>({ station: null, cluster: null });
+
+  // Update bounds/zoom on map events
+  const updateMap = useCallback(() => {
+    const b = map.getBounds();
+    setLocalBounds([
+      b.getSouthWest().lng,
+      b.getSouthWest().lat,
+      b.getNorthEast().lng,
+      b.getNorthEast().lat,
+    ]);
+    setLocalZoom(map.getZoom());
+    
+    // Also notify parent if needed (optional)
+    if (setBounds) setBounds(b);
+    if (setZoom) setZoom(map.getZoom());
+  }, [map, setBounds, setZoom]);
+
+  useMapEvents({
+    moveend: updateMap,
+    zoomend: updateMap,
+  });
 
   useEffect(() => {
-    const observer = new IntersectionObserver(
-      ([entry]) => {
-        // Only consider visible if opacity > 0.5 to account for transitions
-        const computedStyle = window.getComputedStyle(entry.target);
-        const opacity = parseFloat(computedStyle.opacity);
-        setIsVisible(entry.isIntersecting && opacity > 0.5);
-      },
-      { threshold: [0, 0.1] }
-    );
+    updateMap();
+    setIcons(createIcons());
+  }, [map, updateMap]);
 
-    if (componentRef.current) {
-      observer.observe(componentRef.current);
-    }
+  // Use supercluster hook
+  const { clusters, supercluster } = useSupercluster({
+    points,
+    bounds: bounds || [-180, -85, 180, 85],
+    zoom,
+    options: { radius: 40, maxZoom: 14 }
+  });
 
-    return () => observer.disconnect();
-  }, []);
+  return (
+    <>
+      {clusters.map((cluster: any) => {
+        const [longitude, latitude] = cluster.geometry.coordinates;
+        const { cluster: isCluster, point_count: pointCount } = cluster.properties;
 
-  return { isVisible, componentRef };
+        if (isCluster) {
+          let sizeClass = 'cluster-small';
+          if (pointCount > 5000) sizeClass = 'cluster-large';
+          else if (pointCount > 500) sizeClass = 'cluster-medium';
+
+          if (!icons.cluster) return null;
+
+          return (
+            <Marker
+              key={`cluster-${cluster.id}`}
+              position={[latitude, longitude]}
+              icon={icons.cluster(pointCount, sizeClass)}
+              eventHandlers={{
+                click: () => {
+                  const expansionZoom = Math.min(
+                    supercluster.getClusterExpansionZoom(cluster.id) || 18,
+                    18
+                  );
+                  map.setView([latitude, longitude], expansionZoom, {
+                    animate: true,
+                  });
+                }
+              }}
+            />
+          );
+        }
+
+        // Leaf Marker
+        const station = cluster.properties.station;
+        if (!icons.station) return null;
+
+        return (
+          <Marker
+            key={station.stationuuid}
+            position={[latitude, longitude]}
+            icon={icons.station}
+          >
+            <Popup maxWidth={320} closeButton={false} className="custom-leaflet-popup">
+              <StationPopupWrapper
+                station={station}
+                onPlay={onStationPlay}
+                onToggleFavorite={onToggleFavorite}
+                isFav={isFavorite(station.stationuuid)}
+              />
+            </Popup>
+          </Marker>
+        );
+      })}
+    </>
+  );
 }
 
 export default function RadioMap() {
-  const [mapBounds, setMapBounds] = useState<any>(null);
   const { playStation, state } = useAudioPlayer();
   const { isFavorite, toggleFavorite } = useFavorites();
-  const { isVisible, componentRef } = useComponentVisibility();
-  
-  // Use shared station data context
   const { stationsWithCoords: stations, loading, error, importStats, refresh } = useStationData();
-
-  // Removed manual import functionality - now using automatic loading
-
-
 
   const handleStationPlay = useCallback(async (station: RadioStation) => {
     try {
-      console.log('🗺️ Map: Attempting to play station:', station.name, station.url);
       await playStation(station);
-      console.log('🗺️ Map: Play station called successfully');
     } catch (err) {
-      console.error('🗺️ Map: Error playing station:', err);
+      console.error('Map: Error playing station:', err);
     }
   }, [playStation]);
 
@@ -221,42 +189,28 @@ export default function RadioMap() {
     toggleFavorite(station);
   }, [toggleFavorite]);
 
-  // Memoize markers - NEVER re-render for audio state changes!
-  // Only update when visibility changes to avoid expensive operations when hidden
-  const markers = useMemo(() => {
-    // Don't create markers if component is not visible
-    if (!isVisible) return [];
-    
-    const icon = createCustomIcon();
-    if (!icon) return [];
-
-    return stations.map((station) => (
-      <Marker
-        key={station.stationuuid}
-        position={[station.geo_lat, station.geo_long]}
-        icon={icon}
-      >
-        <Popup maxWidth={300} closeButton={true}>
-          <StationPopupWrapper
-            station={station}
-            onPlay={handleStationPlay}
-            onToggleFavorite={handleToggleFavorite}
-            isFav={isFavorite(station.stationuuid)}
-          />
-        </Popup>
-      </Marker>
-    ));
-  }, [stations, isVisible]);
+  // Convert stations to GeoJSON points
+  const points = useMemo(() => {
+    return stations.map(station => ({
+      type: 'Feature' as const,
+      properties: {
+        cluster: false,
+        stationId: station.stationuuid,
+        station: station
+      },
+      geometry: {
+        type: 'Point' as const,
+        coordinates: [station.geo_long, station.geo_lat]
+      }
+    }));
+  }, [stations]);
 
   if (loading) {
     return (
-      <div className="h-screen flex items-center justify-center bg-gray-900">
+      <div className="h-screen flex items-center justify-center bg-black text-signal font-mono">
         <div className="text-center">
-          <Loader className="w-8 h-8 animate-spin text-primary-500 mx-auto mb-4" />
-          <p className="text-gray-300 text-lg mb-2">Loading radio stations...</p>
-          {/* <p className="text-gray-400 text-sm mb-2">Auto-loading 33k+ geocoded stations</p> */}
-          {/* <p className="text-gray-500 text-xs mb-1">🚀 Auto-positioned to prevent overlaps</p> */}
-          {/* <p className="text-gray-500 text-xs">🗺️ Enhanced clustering for massive scale</p> */}
+          <Loader className="w-12 h-12 animate-spin mx-auto mb-4" />
+          <p className="text-lg tracking-widest uppercase">Initializing Signal...</p>
         </div>
       </div>
     );
@@ -264,18 +218,13 @@ export default function RadioMap() {
 
   if (error) {
     return (
-      <div className="h-screen flex items-center justify-center bg-gray-900">
-        <div className="text-center">
-          <div className="w-16 h-16 bg-red-900/50 rounded-full flex items-center justify-center mx-auto mb-4">
-            <Radio className="w-8 h-8 text-red-400" />
-          </div>
-          <h3 className="text-lg font-semibold text-white mb-2">Error Loading Map</h3>
-          <p className="text-gray-300 mb-4">{error}</p>
-          <button
-            onClick={refresh}
-            className="bg-primary-500 text-white px-4 py-2 rounded-lg hover:bg-primary-600 transition-colors"
-          >
-            Try Again
+      <div className="h-screen flex items-center justify-center bg-black text-on-air font-mono">
+        <div className="text-center border border-on-air p-8 shadow-glow-on-air">
+          <Radio className="w-12 h-12 mx-auto mb-4 animate-pulse" />
+          <h3 className="text-xl font-bold uppercase mb-2">Signal Lost</h3>
+          <p className="text-sm opacity-70 mb-6 max-w-md">{error}</p>
+          <button onClick={refresh} className="px-6 py-2 border border-on-air hover:bg-on-air hover:text-black transition-colors uppercase text-sm tracking-wider font-bold">
+            Reconnect
           </button>
         </div>
       </div>
@@ -283,85 +232,51 @@ export default function RadioMap() {
   }
 
   return (
-    <div ref={componentRef} className={`h-screen relative ${state.currentStation ? 'pb-20' : ''}`}>
-      {/* Map Stats */}
-      <div className="absolute top-6 right-6 z-[1000] bg-gray-800/90 backdrop-blur-sm rounded-xl shadow-soft border border-gray-700/50 px-4 py-3">
-        <div className="flex items-center justify-between space-x-3 text-sm">
-          <div className="flex items-center space-x-3">
-            <MapPin className="w-4 h-4 text-primary-400" />
-            <span className="font-medium text-gray-200">{stations.length} stations on map</span>
-          </div>
-          {importStats && (
-            <span className="text-green-400 text-xs">
-              📍 {importStats.coveragePercentage}% geocoded
+    <div className={`h-screen w-full relative bg-tech-900 ${state.currentStation ? 'pb-20' : ''}`}>
+      
+      {/* Map Stats Overlay */}
+      <div className="absolute top-6 right-6 z-[1000] pointer-events-none">
+         <div className="bg-black/80 backdrop-blur border border-tech-700 px-4 py-2 text-xs font-mono text-tech-400 flex items-center gap-3 shadow-panel">
+            <span className="flex items-center gap-2">
+               <span className="w-2 h-2 rounded-full bg-signal animate-pulse"></span>
+               ONLINE
             </span>
-          )}
-        </div>
+            <span className="text-tech-600">|</span>
+            <span className="text-white font-bold">{stations.length.toLocaleString()}</span> STATIONS
+            {importStats && (
+              <>
+                <span className="text-tech-600">|</span>
+                <span className="text-signal">{importStats.coveragePercentage}%</span> GEOCODED
+              </>
+            )}
+         </div>
       </div>
-
-
 
       {/* Map Container */}
       <MapContainer
         center={[20, 0]}
-        zoom={2}
-        style={{ height: '100%', width: '100%' }}
+        zoom={3}
+        minZoom={2}
+        maxZoom={18}
+        zoomControl={false}
+        style={{ height: '100%', width: '100%', background: '#000' }}
+        className="z-0"
       >
-        {/* Base Satellite Layer */}
         <TileLayer
-          attribution='Tiles &copy; Esri &mdash; Source: Esri, i-cubed, USDA, USGS, AEX, GeoEye, Getmapping, Aerogrid, IGN, IGP, UPR-EGP, and the GIS User Community'
-          url="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"
+          attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>'
+          url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png"
+          subdomains="abcd"
+          maxZoom={20}
         />
         
-        {/* Labels and Roads Overlay */}
-        <TileLayer
-          attribution='&copy; Esri'
-          url="https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}"
-          opacity={0.8}
+        {/* Render Clusters Logic Inside Context */}
+        <ClustersLayer 
+           points={points} 
+           onStationPlay={handleStationPlay}
+           onToggleFavorite={handleToggleFavorite}
+           isFavorite={isFavorite}
         />
-        
-        <MarkerClusterGroup
-          chunkedLoading={isVisible} // Only enable chunked loading when visible
-          chunkInterval={isVisible ? 100 : 1000} // Slower updates when not visible
-          chunkDelay={isVisible ? 25 : 100}
-          chunkProgress={(processed: number, total: number) => {
-            // Only log progress when visible
-            if (isVisible && (processed % 2000 === 0 || processed === total)) {
-              console.log(`🗺️ Clustering progress: ${processed.toLocaleString()}/${total.toLocaleString()} stations (${Math.round(processed/total*100)}%)`);
-            }
-          }}
-          maxClusterRadius={60}
-          spiderfyOnMaxZoom={true}
-          showCoverageOnHover={false}
-          zoomToBoundsOnClick={true}
-          spiderfyDistanceMultiplier={2.0}
-          removeOutsideVisibleBounds={true}
-          animate={isVisible} // Disable animations when not visible
-          animateAddingMarkers={isVisible}
-          disableClusteringAtZoom={16}
-          iconCreateFunction={(cluster: any) => {
-            const count = cluster.getChildCount();
-            let size = 'small';
-            let sizeClass = 'w-8 h-8 text-xs';
-            
-            if (count > 1000) {
-              size = 'large';
-              sizeClass = 'w-16 h-16 text-lg font-bold';
-            } else if (count > 100) {
-              size = 'medium';  
-              sizeClass = 'w-12 h-12 text-sm font-semibold';
-            }
-
-                         return new window.L.DivIcon({
-               html: `<div class="cluster-icon cluster-${size} ${sizeClass} bg-gradient-to-br from-primary-400 to-primary-600 text-white rounded-full flex items-center justify-center shadow-lg border-2 border-white">${count}</div>`,
-               className: 'custom-cluster-icon',
-               iconSize: window.L.point(40, 40, true),
-             });
-          }}
-        >
-          {markers}
-        </MarkerClusterGroup>
       </MapContainer>
     </div>
   );
-} 
+}
