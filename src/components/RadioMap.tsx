@@ -10,7 +10,6 @@ import { Loader, Radio } from 'lucide-react';
 import StationPopup from '@/components/map/StationPopup';
 import useSupercluster from 'use-supercluster';
 import { useMap, useMapEvents } from 'react-leaflet';
-import L from 'leaflet';
 import '@/styles/cluster.css';
 
 // Dynamically import map components to avoid SSR issues
@@ -36,10 +35,6 @@ const StationPopupWrapper = ({ station, onPlay, onToggleFavorite, isFav }: {
     ? { ...station, ...state.currentStation } 
     : station;
 
-  if (isPlaying) {
-     console.log('Popup render for active station:', displayStation.name, 'Favicon:', displayStation.favicon);
-  }
-  
   return (
     <StationPopup
       station={displayStation}
@@ -55,6 +50,9 @@ const StationPopupWrapper = ({ station, onPlay, onToggleFavorite, isFav }: {
 // Icons creation
 const createIcons = () => {
   if (typeof window === 'undefined') return { station: null, cluster: null };
+  
+  // Safe import of Leaflet on client side
+  const L = require('leaflet');
   
   const stationIcon = L.divIcon({
     html: `<div class="custom-radio-marker"></div>`,
