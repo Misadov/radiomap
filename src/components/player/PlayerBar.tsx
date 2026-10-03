@@ -7,6 +7,7 @@ import { Artwork } from '../ui/Artwork';
 import { IconButton } from '../ui/IconButton';
 import { ErrorActions, FavoriteButton, PlayButton, ShareButton, StatusLine, VolumeControl } from './controls';
 import { Visualizer } from './Visualizer';
+import { VizSettings } from './VizSettings';
 
 /** Desktop: floating bar at the bottom, right of the side panel. */
 export function PlayerBar() {
@@ -22,9 +23,11 @@ export function PlayerBar() {
     <div className="pointer-events-none fixed right-3 bottom-3 left-[408px] z-30 flex justify-center lg:left-[424px]">
       <div
         data-occludes-map="bottom"
-        className="glass pointer-events-auto relative flex h-[76px] w-full max-w-[820px] items-center gap-3 overflow-hidden rounded-[22px] pr-3 pl-2.5 animate-rise"
+        className="glass pointer-events-auto relative flex h-[76px] w-full max-w-[820px] items-center gap-3 rounded-[22px] pr-3 pl-2.5 animate-rise"
       >
-        <Visualizer variant="bars" bars={72} className="pointer-events-none absolute inset-x-6 bottom-0 h-[70%] opacity-[0.16] [mask-image:linear-gradient(to_top,black,transparent)]" />
+        <div className="pointer-events-none absolute inset-0 overflow-hidden rounded-[22px]">
+          <Visualizer slot="bar" className="absolute inset-x-0 bottom-0 h-full w-full [mask-image:linear-gradient(to_top,black_30%,transparent)]" />
+        </div>
 
         <button type="button" onClick={open} className="group relative flex min-w-0 flex-1 items-center gap-3 rounded-2xl p-1 text-left" aria-label={t.openPlayer}>
           <div className="relative">
@@ -56,6 +59,7 @@ export function PlayerBar() {
             <VolumeControl compact />
           </div>
           <FavoriteButton size="sm" />
+          <VizSettings side="top" />
           <div className="hidden lg:block">
             <ShareButton size="sm" />
           </div>
@@ -75,7 +79,7 @@ export function MiniPlayer() {
   if (!station) return null;
   return (
     <div className="relative mx-3 mb-2.5 flex items-center gap-2.5 overflow-hidden rounded-[18px] bg-white/[0.06] p-1.5 ring-1 ring-line animate-fade-in">
-      <Visualizer variant="bars" bars={40} className="pointer-events-none absolute inset-x-3 bottom-0 h-[60%] opacity-[0.14]" />
+      <Visualizer slot="bar" className="pointer-events-none absolute inset-0 h-full w-full [mask-image:linear-gradient(to_top,black_30%,transparent)]" />
       <button
         type="button"
         onClick={() => useUI.getState().setNowPlayingOpen(true)}

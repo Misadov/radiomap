@@ -20,7 +20,7 @@ import { placeContext, placeName, useData } from '@/store/data';
 import { useLibrary } from '@/store/library';
 import { usePlayer } from '@/store/player';
 import { useUI } from '@/store/ui';
-import { buildStyle, LABEL_LAYERS, labelField } from './style';
+import { applyMapMode, buildStyle, LABEL_LAYERS, labelField } from './style';
 
 setWorkerUrl(`/vendor/maplibre/${pkg.version}/maplibre-gl-worker.mjs`);
 
@@ -219,7 +219,7 @@ export default function GlobeMap() {
     const center = initialCenter();
     const map = new MapLibre({
       container,
-      style: buildStyle(useLibrary.getState().lang),
+      style: buildStyle(useLibrary.getState().lang, useLibrary.getState().settings.basemap, useLibrary.getState().settings.view3d),
       center,
       zoom: fitGlobeZoom(container, center[1]),
       minZoom: 0.6,
@@ -236,6 +236,7 @@ export default function GlobeMap() {
     let disposed = false;
     // Slow idle rotation until the visitor touches the globe.
     let spinning = !reducedMotion;
+    let userZoom = false;
 
     // ---- padding follows the floating UI ------------------------------------
     // Debounced to a frame and skipped when unchanged: setting padding cancels any
@@ -306,6 +307,14 @@ export default function GlobeMap() {
     };
     for (const ev of ['mousedown', 'touchstart', 'wheel', 'dragstart'] as const) map.on(ev, stopSpin);
     map.on('moveend', () => spinning && spin());
+    // In 3D mode, zooming down to street level tilts the camera so buildings stand up.
+    map.on('zoomend', (e) => {
+      if (!e.originalEvent && !userZoom) return;
+      userZoom = false;
+      if (useLibrary.getState().settings.view3d && map.getZoom() >= 13 && map.getPitch() < 15) {
+        map.easeTo({ pitch: 55, bearing: map.getBearing() || -20, duration: 900 });
+      }
+    });
 
     // ---- places data -----------------------------------------------------------
     const showPlaces = () => {
@@ -447,8 +456,9 @@ export default function GlobeMap() {
       map.flyTo({
         center,
         zoom: Math.max(zoom, target),
-        pitch: kind === PlaceKind.Region ? 40 : 58,
-        bearing: map.getBearing() || -18,
+        ...(useLibrary.getState().settings.view3d
+          ? { pitch: kind === PlaceKind.Region ? 40 : 58, bearing: map.getBearing() || -18 }
+          : { pitch: 0, bearing: 0 }),
         speed: 1.2,
         curve: 1.5,
         essential: true,
@@ -496,14 +506,9 @@ export default function GlobeMap() {
           stopSpin();
           map.flyTo({ center: [map.getCenter().lng, 20], zoom: fitGlobeZoom(container, 20), pitch: 0, bearing: 0, speed: 1.2, essential: true });
           break;
-        case 'tilt': {
-          stopSpin();
-          const flat = map.getPitch() < 20;
-          map.easeTo({ pitch: flat ? 62 : 0, bearing: flat ? map.getBearing() - 25 : 0, zoom: flat ? Math.max(map.getZoom(), 9) : map.getZoom(), duration: 1400 });
-          break;
-        }
         case 'zoom':
           stopSpin();
+          userZoom = true;
           map.easeTo({ zoom: map.getZoom() + cmd.delta, duration: 350 });
           break;
       }
@@ -601,6 +606,16 @@ export default function GlobeMap() {
       }),
       useLibrary.subscribe((s, prev) => {
         if (s.passport !== prev.passport) syncVisited();
+        if (ready && s.settings !== prev.settings) {
+          const { basemap, view3d } = s.settings;
+          if (basemap !== prev.settings.basemap || view3d !== prev.settings.view3d) applyMapMode(map, basemap, view3d);
+          if (view3d !== prev.settings.view3d) {
+            stopSpin();
+            // Tilt into the city when close enough; from space just remember the choice.
+            if (view3d && map.getZoom() >= 4) map.easeTo({ pitch: 60, bearing: map.getBearing() || -20, duration: 1200 });
+            else if (!view3d) map.easeTo({ pitch: 0, bearing: 0, duration: 900 });
+          }
+        }
         if (s.lang === prev.lang || !ready) return;
         for (const id of LABEL_LAYERS) if (map.getLayer(id)) map.setLayoutProperty(id, 'text-field', labelField(s.lang));
       }),

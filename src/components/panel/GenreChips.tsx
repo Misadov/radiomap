@@ -10,7 +10,13 @@ export function GenreChips({
   counts,
   sort = false,
   showCounts = false,
+  leading,
+  allActive,
 }: {
+  /** Extra chips before the genres (e.g. "Popular"). */
+  leading?: React.ReactNode;
+  /** Override for when "All" is lit. */
+  allActive?: boolean;
   value: number;
   onChange: (genre: number) => void;
   counts?: ArrayLike<number>;
@@ -24,6 +30,7 @@ export function GenreChips({
   // Keep the active genre in sight.
   if (value >= 0) list = [...list.filter((g) => g.bit === value), ...list.filter((g) => g.bit !== value)];
 
+  const allOn = allActive ?? value < 0;
   const chip = (active: boolean) =>
     `flex h-8 shrink-0 items-center gap-1.5 rounded-full border px-3 text-[12.5px] font-semibold transition-all duration-150 active:scale-95 ${
       active ? 'border-accent/50 bg-accent-soft text-accent-pale' : 'border-line text-fg-2 hover:border-line-2 hover:bg-elev hover:text-fg'
@@ -31,9 +38,10 @@ export function GenreChips({
 
   return (
     <div className="no-scrollbar mask-fade-x -mx-4 flex gap-1.5 overflow-x-auto px-4 py-0.5" role="toolbar" aria-label="Genres">
-      <button type="button" className={chip(value < 0)} onClick={() => onChange(-1)} aria-pressed={value < 0}>
+      <button type="button" className={chip(allOn)} onClick={() => onChange(-1)} aria-pressed={allOn}>
         {t.allGenres}
       </button>
+      {leading}
       {list.map((g) => (
         <button
           key={g.id}
@@ -52,6 +60,11 @@ export function GenreChips({
 }
 
 /** Station count per genre bit for a list of station indices. */
+export const chipClass = (active: boolean) =>
+  `flex h-8 shrink-0 items-center gap-1.5 rounded-full border px-3 text-[12.5px] font-semibold transition-all duration-150 active:scale-95 ${
+    active ? 'border-accent/50 bg-accent-soft text-accent-pale' : 'border-line text-fg-2 hover:border-line-2 hover:bg-elev hover:text-fg'
+  }`;
+
 export function countGenres(indices: number[], genres: number[]): Int32Array {
   const counts = new Int32Array(GENRES.length);
   for (const i of indices) {

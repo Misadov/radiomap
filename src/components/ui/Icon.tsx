@@ -3,6 +3,27 @@ import type { SVGProps } from 'react';
 // A small, consistent icon set (24px grid, 1.8 stroke) — no icon font, no runtime cost.
 
 const paths = {
+  satellite: (
+    <>
+      <path d="m4.5 9.5 5-5 3 3-5 5z" />
+      <path d="m14.5 19.5 5-5-3-3-5 5z" />
+      <path d="m9.5 12.5 3-3" />
+      <path d="M4 20c0-2.2 1.8-4 4-4" />
+    </>
+  ),
+  map: (
+    <>
+      <path d="M9 4.5 3.8 6.6v13l5.2-2.1 6 2.1 5.2-2.1v-13L15 6.6z" />
+      <path d="M9 4.5v13M15 6.6v13" />
+    </>
+  ),
+  sliders: (
+    <>
+      <path d="M4 7h10M18 7h2M4 17h4M12 17h8" />
+      <circle cx="16" cy="7" r="2" />
+      <circle cx="10" cy="17" r="2" />
+    </>
+  ),
   play: <path d="M7 4.8v14.4a1 1 0 0 0 1.52.85l11.5-7.2a1 1 0 0 0 0-1.7L8.52 3.95A1 1 0 0 0 7 4.8Z" fill="currentColor" stroke="none" />,
   pause: (
     <>

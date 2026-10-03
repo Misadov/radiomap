@@ -11,6 +11,15 @@ export interface PassportStats {
   lastLat: number | null;
   lastLng: number | null;
   bestJumpKm: number;
+  /** Play counts, for the "most listened" stats. */
+  countryPlays: Record<string, number>;
+  genrePlays: Record<string, number>;
+  placePlays: Record<string, number>;
+  stationPlays: Record<string, { n: number; name: string }>;
+  /** Seconds actually listened. */
+  listenSec: number;
+  /** Days (YYYY-MM-DD) with at least one play, for streaks. */
+  days: string[];
 }
 
 export const EMPTY_PASSPORT: PassportStats = {
@@ -23,7 +32,50 @@ export const EMPTY_PASSPORT: PassportStats = {
   lastLat: null,
   lastLng: null,
   bestJumpKm: 0,
+  countryPlays: {},
+  genrePlays: {},
+  placePlays: {},
+  stationPlays: {},
+  listenSec: 0,
+  days: [],
 };
+
+/** Highest-count key of a tally. */
+export function topOf<T>(tally: Record<string, T>, count: (v: T) => number): [string, number] | null {
+  let best: [string, number] | null = null;
+  for (const [k, v] of Object.entries(tally)) {
+    const n = count(v);
+    if (!best || n > best[1]) best = [k, n];
+  }
+  return best;
+}
+
+export function dayKey(d = new Date()) {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+/** Longest and current runs of consecutive listening days. */
+export function streaks(days: string[]): { best: number; current: number } {
+  const set = new Set(days);
+  const sorted = [...set].sort();
+  let best = 0;
+  let run = 0;
+  let prev = 0;
+  for (const d of sorted) {
+    const t = Date.parse(`${d}T12:00:00`);
+    run = prev && Math.round((t - prev) / 86400000) === 1 ? run + 1 : 1;
+    best = Math.max(best, run);
+    prev = t;
+  }
+  let current = 0;
+  const cursor = new Date();
+  if (!set.has(dayKey(cursor))) cursor.setDate(cursor.getDate() - 1);
+  while (set.has(dayKey(cursor))) {
+    current++;
+    cursor.setDate(cursor.getDate() - 1);
+  }
+  return { best, current };
+}
 
 export const XP = { play: 10, place: 25, country: 60, genre: 15, achievement: 100 };
 

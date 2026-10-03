@@ -50,6 +50,8 @@ function stampVisit(station: Station) {
   const p = station.place;
   const lib = useLibrary.getState();
   const result = lib.stamp({
+    stationId: station.id,
+    stationName: station.name,
     country: station.country,
     placeKey: p >= 0 && places ? `${places.country[p]}|${places.name[p]}` : null,
     genres: GENRES.filter((g) => station.genres & (1 << g.bit)).map((g) => g.id),
@@ -172,6 +174,10 @@ if (typeof window !== 'undefined') {
     usePlayer.setState({ status: 'error', error });
   });
 
+  // Listening time for the passport.
+  setInterval(() => {
+    if (usePlayer.getState().status === 'playing') useLibrary.getState().addListen(15);
+  }, 15_000);
   const applyVolume = () => {
     const { volume, muted } = useLibrary.getState();
     engine.setVolume(volume, muted);

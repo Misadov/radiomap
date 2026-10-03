@@ -1,9 +1,13 @@
 'use client';
 
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
+import { GENRES, genreLabel } from '@/lib/genres';
+import { renderCard, shareCard } from '@/lib/share-card';
+import { useUI } from '@/store/ui';
+import { Spinner } from '../ui/Eq';
 import { playRandom } from '@/lib/actions';
 import { countryName, formatNumber, useLang, useT } from '@/lib/i18n';
-import { ACHIEVEMENTS, levelOf, levelTitle } from '@/lib/passport';
+import { ACHIEVEMENTS, levelOf, levelTitle, streaks, topOf } from '@/lib/passport';
 import { useData } from '@/store/data';
 import { useLibrary } from '@/store/library';
 import { Flag } from '../ui/Flag';
@@ -21,6 +25,61 @@ export function PassportView() {
     [passport.countries],
   );
   const share = countries.length / Math.max(1, totalCountries);
+  const [sharing, setSharing] = useState(false);
+
+  const stats = useMemo(() => {
+    const topCountry = topOf(passport.countryPlays ?? {}, (n) => n);
+    const topPlace = topOf(passport.placePlays ?? {}, (n) => n);
+    const topGenre = topOf(passport.genrePlays ?? {}, (n) => n);
+    const topStation = topOf(passport.stationPlays ?? {}, (v) => v.n);
+    const genre = topGenre ? GENRES.find((g) => g.id === topGenre[0]) : null;
+    const hours = Math.floor((passport.listenSec ?? 0) / 3600);
+    const minutes = Math.floor(((passport.listenSec ?? 0) % 3600) / 60);
+    return {
+      topCountry,
+      topPlace: topPlace ? ([topPlace[0].split('|')[1] ?? topPlace[0], topPlace[1]] as const) : null,
+      topGenre: genre && topGenre ? ([genreLabel(genre, lang), topGenre[1]] as const) : null,
+      topStation: topStation ? ([passport.stationPlays[topStation[0]].name, topStation[1]] as const) : null,
+      time: hours ? t.hoursMinutes(hours, minutes) : t.minutes(minutes),
+      streak: streaks(passport.days ?? []),
+      jump: Math.round(passport.bestJumpKm),
+    };
+  }, [passport, lang, t]);
+
+  const onShare = async () => {
+    setSharing(true);
+    try {
+      const unlocked = ACHIEVEMENTS.filter((a) => passport.achievements[a.id]);
+      const highlights: [string, string][] = [];
+      if (stats.topCountry) highlights.push([t.statTopCountry, countryName(stats.topCountry[0], lang)]);
+      if (stats.topPlace) highlights.push([t.statTopCity, stats.topPlace[0]]);
+      if (stats.topGenre) highlights.push([t.statTopGenre, stats.topGenre[0]]);
+      if (stats.topStation) highlights.push([t.statTopStation, stats.topStation[0]]);
+      highlights.push([t.statTime, stats.time]);
+      const blob = await renderCard({
+        title: t.passportTitle,
+        level,
+        levelTitle: levelTitle(level, lang),
+        xp: `${formatNumber(passport.xp, lang)} XP`,
+        stats: [
+          [String(countries.length), t.statCountries],
+          [formatNumber(Object.keys(passport.places).length, lang), t.statCities],
+          [String(Object.keys(passport.achievements).length), t.achievements],
+        ],
+        highlights,
+        achievements: unlocked.map((a) => a.icon),
+        flags: countries,
+        footer: window.location.host,
+      });
+      const text = t.shareText(level, countries.length, Object.keys(passport.places).length);
+      const how = await shareCard(blob, text, window.location.origin);
+      if (how === 'downloaded') useUI.getState().toast(t.cardSaved);
+    } catch {
+      useUI.getState().toast(t.shareFailed, 'error');
+    } finally {
+      setSharing(false);
+    }
+  };
 
   return (
     <div className="animate-fade-in pb-6">
@@ -53,11 +112,22 @@ export function PassportView() {
               <span className="label-mono mt-0.5 text-[8.5px] text-fg-3">LVL</span>
             </div>
           </div>
-          <div className="min-w-0">
+          <div className="min-w-0 flex-1">
             <div className="text-[19px] font-extrabold tracking-tight text-fg">{levelTitle(level, lang)}</div>
             <div className="mt-0.5 font-mono text-[12px] text-accent">{formatNumber(passport.xp, lang)} XP</div>
             <div className="mt-1 text-[11.5px] text-fg-3">{t.xpToNext(toNext)}</div>
           </div>
+          <button
+            type="button"
+            onClick={() => void onShare()}
+            disabled={sharing}
+            aria-label={t.sharePassport}
+            className="tip flex size-10 shrink-0 items-center justify-center self-start rounded-xl bg-white/[0.08] text-fg-2 transition-colors hover:bg-white/[0.14] hover:text-fg"
+            data-tip={t.sharePassport}
+            data-tip-side="left"
+          >
+            {sharing ? <Spinner size={16} className="text-accent" /> : <Icon name="share" size={18} />}
+          </button>
         </div>
         <div className="mt-4 grid grid-cols-3 gap-2">
           {[
@@ -67,7 +137,7 @@ export function PassportView() {
           ].map(([v, label]) => (
             <div key={label} className="rounded-2xl bg-black/25 px-2.5 py-2">
               <div className="text-[17px] font-extrabold text-fg">{v}</div>
-              <div className="label-mono mt-0.5 truncate text-[9.5px] text-fg-3">{label}</div>
+              <div className="label-mono mt-0.5 text-[9.5px] leading-tight text-fg-3">{label}</div>
             </div>
           ))}
         </div>
@@ -85,6 +155,43 @@ export function PassportView() {
       </div>
 
       {!passport.plays ? <p className="mt-4 px-2 text-center text-[13px] leading-relaxed text-fg-3">{t.passportEmpty}</p> : null}
+
+      {passport.plays ? (
+        <>
+          <SectionTitle>{t.statistics}</SectionTitle>
+          <div className="overflow-hidden rounded-2xl border border-line">
+            {(
+              [
+                stats.topCountry && [
+                  t.statTopCountry,
+                  <span key="c" className="flex min-w-0 items-center gap-2">
+                    <Flag cc={stats.topCountry[0]} size={16} />
+                    <span className="truncate">{countryName(stats.topCountry[0], lang)}</span>
+                  </span>,
+                  t.timesPlayed(stats.topCountry[1]),
+                ],
+                stats.topPlace && [t.statTopCity, stats.topPlace[0], t.timesPlayed(stats.topPlace[1])],
+                stats.topGenre && [t.statTopGenre, stats.topGenre[0], t.timesPlayed(stats.topGenre[1])],
+                stats.topStation && [t.statTopStation, stats.topStation[0], t.timesPlayed(stats.topStation[1])],
+                [t.statTime, stats.time, null],
+                [t.statStreak, t.days(stats.streak.current), t.bestStreak(stats.streak.best)],
+                [t.statGenres, String(Object.keys(passport.genres).length), null],
+                stats.jump ? [t.statJump, `${formatNumber(stats.jump, lang)} km`, null] : null,
+              ].filter(Boolean) as [string, React.ReactNode, string | null][]
+            ).map(([label, value, sub]) => (
+              <div key={label} className="flex items-center gap-3 border-b border-line px-3 py-2.5 last:border-b-0">
+                <span className="w-[42%] shrink-0 text-[12px] leading-tight text-fg-3">{label}</span>
+                <span className="min-w-0 flex-1 text-right">
+                  <span className="flex min-w-0 justify-end text-[13.5px] font-bold text-fg">
+                    <span className="min-w-0 truncate">{value}</span>
+                  </span>
+                  {sub ? <span className="block font-mono text-[10.5px] text-fg-3">{sub}</span> : null}
+                </span>
+              </div>
+            ))}
+          </div>
+        </>
+      ) : null}
 
       <SectionTitle aside={<span className="font-mono text-[11px] text-fg-3">{`${Object.keys(passport.achievements).length}/${ACHIEVEMENTS.length}`}</span>}>
         {t.achievements}

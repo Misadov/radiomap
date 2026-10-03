@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useRef } from 'react';
-import { formatNumber, useLang, useT } from '@/lib/i18n';
+import { useT } from '@/lib/i18n';
 import { useLibrary } from '@/store/library';
 import { useUI, type Tab } from '@/store/ui';
 import { ScrollContext } from '../station/StationList';
@@ -15,7 +15,6 @@ import { SearchResults } from './SearchResults';
 
 function Tabs() {
   const t = useT();
-  const lang = useLang();
   const tab = useUI((s) => s.tab);
   const setTab = useUI((s) => s.setTab);
   const favorites = useLibrary((s) => s.favorites.length);
@@ -36,13 +35,12 @@ function Tabs() {
             role="tab"
             aria-selected={active}
             onClick={() => setTab(item.id)}
-            className={`flex h-9 items-center justify-center gap-1.5 rounded-[10px] px-1 text-[12px] font-semibold transition-all duration-200 ${
+            className={`flex h-[50px] min-w-0 flex-col items-center justify-center gap-0.5 rounded-[10px] px-0.5 text-[11px] leading-none font-semibold transition-all duration-200 ${
               active ? 'bg-white/[0.09] text-fg shadow-[0_1px_0_rgba(255,255,255,0.06)_inset,0_6px_16px_-8px_rgba(0,0,0,0.8)]' : 'text-fg-3 hover:text-fg-2'
             }`}
           >
             <Icon name={item.icon} size={15} className={active ? 'text-accent' : ''} />
-            <span className="truncate">{item.label}</span>
-            {item.count && item.id !== 'favorites' ? <span className="font-mono text-[10.5px] text-fg-3">{formatNumber(item.count, lang)}</span> : null}
+            <span className="max-w-full truncate">{item.label}</span>
           </button>
         );
       })}

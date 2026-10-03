@@ -20,6 +20,8 @@ interface UIState {
   query: string;
   /** Genre filter (bit index into genres.json), -1 for all. */
   genre: number;
+  /** Explore tab: popular stations instead of the country list. */
+  popular: boolean;
   /** Station indices visible in the current map viewport, best first. */
   inView: number[] | null;
   /** True while the globe shows (almost) the whole planet. */
@@ -34,6 +36,7 @@ interface UIState {
   setTab: (tab: Tab) => void;
   setQuery: (query: string) => void;
   setGenre: (genre: number) => void;
+  setPopular: (popular: boolean) => void;
   setInView: (inView: number[], worldView: boolean) => void;
   setNowPlayingOpen: (open: boolean) => void;
   setAboutOpen: (open: boolean) => void;
@@ -54,6 +57,7 @@ export const useUI = create<UIState>()((set, get) => ({
   tab: 'explore',
   query: '',
   genre: -1,
+  popular: false,
   inView: null,
   worldView: true,
   nowPlayingOpen: false,
@@ -77,6 +81,7 @@ export const useUI = create<UIState>()((set, get) => ({
   setTab: (tab) => set({ tab, selection: null, trail: [], query: '' }),
   setQuery: (query) => set({ query }),
   setGenre: (genre) => set({ genre }),
+  setPopular: (popular) => set({ popular }),
   setInView: (inView, worldView) => set({ inView, worldView }),
   setNowPlayingOpen: (nowPlayingOpen) => set({ nowPlayingOpen }),
   setAboutOpen: (aboutOpen) => set({ aboutOpen }),
