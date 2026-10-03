@@ -4,6 +4,7 @@ import { create } from 'zustand';
 import { engine, type EngineError, type EngineStatus } from '@/lib/audio/engine';
 import { clickStation } from '@/lib/radio-browser';
 import type { Station } from '@/lib/types';
+import { GENRES } from '@/lib/genres';
 import { placeName, stationAt, toSaved, useData, whenStreams } from './data';
 import { useLibrary } from './library';
 import { useUI } from './ui';
@@ -32,6 +33,34 @@ interface Attempt {
   station: Station;
   fresh: Promise<string | null>;
   retried: boolean;
+  stamped?: boolean;
+}
+
+export interface RewardDetail {
+  xp: number;
+  place: number;
+  country: string;
+  newCountry: boolean;
+  achievements: string[];
+}
+
+/** Passport stamp + XP for a station that actually started playing. */
+function stampVisit(station: Station) {
+  const { places } = useData.getState();
+  const p = station.place;
+  const lib = useLibrary.getState();
+  const result = lib.stamp({
+    country: station.country,
+    placeKey: p >= 0 && places ? `${places.country[p]}|${places.name[p]}` : null,
+    genres: GENRES.filter((g) => station.genres & (1 << g.bit)).map((g) => g.id),
+    lat: p >= 0 && places ? places.lat[p] : null,
+    lng: p >= 0 && places ? places.lng[p] : null,
+  });
+  window.dispatchEvent(
+    new CustomEvent<RewardDetail>('radiomap:reward', {
+      detail: { xp: result.xp, place: p, country: station.country, newCountry: result.newCountry, achievements: result.achievements },
+    }),
+  );
 }
 
 let attempt: Attempt | null = null;
@@ -117,9 +146,11 @@ if (typeof window !== 'undefined') {
   engine.on('status', (status) => {
     if (status === 'error') return; // handled below, possibly with a retry
     usePlayer.setState({ status, ...(status === 'playing' ? { error: null } : {}) });
-    if (status === 'playing' && attempt) {
+    if (status === 'playing' && attempt && !attempt.stamped) {
+      attempt.stamped = true;
       const saved = toSaved(attempt.station);
       if (saved.id) useLibrary.getState().addRecent(saved);
+      stampVisit(attempt.station);
     }
   });
 

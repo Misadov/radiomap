@@ -29,6 +29,7 @@ export function MapControls() {
           {locating ? <Spinner size={14} className="absolute text-accent" /> : null}
         </IconButton>
         <IconButton icon="globe" label={t.resetView} variant="glass" size="md" tip={false} onClick={() => mapBus.send({ type: 'reset' })} />
+        <button type="button" onClick={() => mapBus.send({ type: 'tilt' })} className="glass flex size-10 items-center justify-center rounded-xl font-mono text-[12px] font-bold text-fg-2">3D</button>
       </div>
     );
   }
@@ -41,6 +42,16 @@ export function MapControls() {
       <div className="glass flex flex-col rounded-[16px] p-1">
         <IconButton icon="plus" label={t.zoomIn} tip="left" onClick={() => mapBus.send({ type: 'zoom', delta: 1 })} />
         <IconButton icon="minus" label={t.zoomOut} tip="left" onClick={() => mapBus.send({ type: 'zoom', delta: -1 })} />
+        <button
+          type="button"
+          onClick={() => mapBus.send({ type: 'tilt' })}
+          aria-label={t.tilt}
+          data-tip={t.tilt}
+          data-tip-side="left"
+          className="tip relative flex size-10 items-center justify-center rounded-xl font-mono text-[12px] font-bold text-fg-2 hover:bg-elev-2 hover:text-fg"
+        >
+          3D
+        </button>
       </div>
       <div className="glass flex flex-col rounded-[16px] p-1">
         <IconButton icon="globe" label={t.resetView} tip="left" onClick={() => mapBus.send({ type: 'reset' })} />

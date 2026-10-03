@@ -114,6 +114,21 @@ function placeLayers(genre: number): LayerSpecification[] {
       },
     },
     {
+      // Passport stamps: places you've already tuned into get a teal ring.
+      id: 'places-visited',
+      type: 'circle',
+      source: SOURCE,
+      filter: ['in', ['get', 'i'], ['literal', []]],
+      paint: {
+        'circle-radius': radius(1.6, 3),
+        'circle-color': 'rgba(0, 0, 0, 0)',
+        'circle-stroke-width': ['interpolate', ['linear'], ['zoom'], 1, 1, 8, 2.2],
+        'circle-stroke-color': '#5ef2d0',
+        'circle-stroke-opacity': 0.85,
+        'circle-pitch-alignment': 'map',
+      },
+    },
+    {
       id: 'places-hit',
       type: 'circle',
       source: SOURCE,
@@ -130,7 +145,7 @@ function placesGeoJSON(places: PlacesFile, counts: ArrayLike<number> | null): Ge
       type: 'Feature',
       id: p,
       geometry: { type: 'Point', coordinates: [places.lng[p], places.lat[p]] },
-      properties: { n: counts ? counts[p] : places.stations[p], t: places.stations[p], k: places.kind[p] },
+      properties: { i: p, n: counts ? counts[p] : places.stations[p], t: places.stations[p], k: places.kind[p] },
     };
   }
   return { type: 'FeatureCollection', features };
@@ -208,18 +223,13 @@ export default function GlobeMap() {
       center,
       zoom: fitGlobeZoom(container, center[1]),
       minZoom: 0.6,
-      maxZoom: 15,
-      maxPitch: 0,
-      dragRotate: false,
-      pitchWithRotate: false,
-      touchPitch: false,
+      maxZoom: 18.5,
+      maxPitch: 78,
       attributionControl: { compact: true },
       maplibreLogo: false,
       fadeDuration: 200,
       canvasContextAttributes: { antialias: true },
     });
-    map.touchZoomRotate.disableRotation();
-    map.keyboard.disableRotation();
 
     let ready = false;
     let dataShown = false;
@@ -426,14 +436,23 @@ export default function GlobeMap() {
       if (!places) return;
       stopSpin();
       const kind = places.kind[p];
-      const target = kind === PlaceKind.Region ? 6 : kind === PlaceKind.Point ? 8.5 : 7.5;
+      const target = kind === PlaceKind.Region ? 6.5 : kind === PlaceKind.Point ? 10 : 10.5;
       const zoom = map.getZoom();
       const center: [number, number] = [places.lng[p], places.lat[p]];
       if (fromMap && zoom >= 5) {
         map.easeTo({ center, duration: 600 });
         return;
       }
-      map.flyTo({ center, zoom: Math.max(zoom, target), speed: 1.3, curve: 1.5, essential: true });
+      // Swoop down into a tilted 3D view over the satellite imagery.
+      map.flyTo({
+        center,
+        zoom: Math.max(zoom, target),
+        pitch: kind === PlaceKind.Region ? 40 : 58,
+        bearing: map.getBearing() || -18,
+        speed: 1.2,
+        curve: 1.5,
+        essential: true,
+      });
     }
 
     function flyToCountry(cc: string) {
@@ -475,8 +494,14 @@ export default function GlobeMap() {
           break;
         case 'reset':
           stopSpin();
-          map.flyTo({ center: [map.getCenter().lng, 20], zoom: fitGlobeZoom(container, 20), speed: 1.2, essential: true });
+          map.flyTo({ center: [map.getCenter().lng, 20], zoom: fitGlobeZoom(container, 20), pitch: 0, bearing: 0, speed: 1.2, essential: true });
           break;
+        case 'tilt': {
+          stopSpin();
+          const flat = map.getPitch() < 20;
+          map.easeTo({ pitch: flat ? 62 : 0, bearing: flat ? map.getBearing() - 25 : 0, zoom: flat ? Math.max(map.getZoom(), 9) : map.getZoom(), duration: 1400 });
+          break;
+        }
         case 'zoom':
           stopSpin();
           map.easeTo({ zoom: map.getZoom() + cmd.delta, duration: 350 });
@@ -530,10 +555,34 @@ export default function GlobeMap() {
       else core.style.setProperty('--level', '0');
     };
 
+    // ---- passport: visited places + XP bursts ----------------------------------
+    const syncVisited = () => {
+      const { places } = useData.getState();
+      if (!ready || !places || !map.getLayer('places-visited')) return;
+      const visited = useLibrary.getState().passport?.places ?? {};
+      const ids: number[] = [];
+      for (let p = 0; p < places.count; p++) if (visited[`${places.country[p]}|${places.name[p]}`]) ids.push(p);
+      map.setFilter('places-visited', ['in', ['get', 'i'], ['literal', ids]]);
+    };
+    const onReward = (e: Event) => {
+      const { xp, place, newCountry } = (e as CustomEvent<{ xp: number; place: number; newCountry: boolean }>).detail;
+      const { places } = useData.getState();
+      if (!places || place < 0 || !xp) return;
+      const el = document.createElement('div');
+      el.className = `xp-burst${newCountry ? ' big' : ''}`;
+      el.textContent = `+${xp} XP`;
+      const marker = new Marker({ element: el, anchor: 'bottom', offset: [0, -18] }).setLngLat([places.lng[place], places.lat[place]]).addTo(map);
+      setTimeout(() => marker.remove(), 2600);
+    };
+    window.addEventListener('radiomap:reward', onReward);
+
     // ---- store subscriptions ---------------------------------------------------
     const unsubs = [
       useData.subscribe((s, prev) => {
-        if (s.places !== prev.places) showPlaces();
+        if (s.places !== prev.places) {
+          showPlaces();
+          syncVisited();
+        }
         if (s.derived !== prev.derived) {
           if (useUI.getState().genre >= 0) applyGenre(useUI.getState().genre);
           computeInView();
@@ -551,6 +600,7 @@ export default function GlobeMap() {
         if (s.station !== prev.station || s.status !== prev.status || s.analysis !== prev.analysis) syncPlaying();
       }),
       useLibrary.subscribe((s, prev) => {
+        if (s.passport !== prev.passport) syncVisited();
         if (s.lang === prev.lang || !ready) return;
         for (const id of LABEL_LAYERS) if (map.getLayer(id)) map.setLayoutProperty(id, 'text-field', labelField(s.lang));
       }),
@@ -561,6 +611,7 @@ export default function GlobeMap() {
       ready = true;
       updatePadding();
       showPlaces();
+      syncVisited();
       syncSelection();
       syncPlaying();
     });
@@ -578,6 +629,7 @@ export default function GlobeMap() {
       attrObserver.disconnect();
       cancelAnimationFrame(paddingFrame);
       window.removeEventListener('radiomap:layout', updatePadding);
+      window.removeEventListener('radiomap:reward', onReward);
       cancelAnimationFrame(levelFrame);
       map.remove();
     };

@@ -3,7 +3,7 @@
 import { create } from 'zustand';
 
 export type Selection = { kind: 'place'; place: number } | { kind: 'country'; cc: string } | null;
-export type Tab = 'explore' | 'favorites' | 'history';
+export type Tab = 'explore' | 'favorites' | 'history' | 'passport';
 export type SheetSnap = 'peek' | 'half' | 'full';
 
 export interface Toast {

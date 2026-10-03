@@ -5,6 +5,7 @@ export type MapCommand =
   | { type: 'fly-country'; cc: string }
   | { type: 'fly-to'; lng: number; lat: number; zoom: number }
   | { type: 'reset' }
+  | { type: 'tilt' }
   | { type: 'zoom'; delta: number };
 
 type Listener = (cmd: MapCommand) => void;

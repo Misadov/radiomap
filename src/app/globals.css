@@ -6,7 +6,7 @@
   --font-mono: 'JetBrains Mono Variable', ui-monospace, 'SFMono-Regular', Menlo, monospace;
 
   --color-ink: #04050a;
-  --color-panel: rgb(14 15 24 / 0.84);
+  --color-panel: rgb(12 13 21 / 0.93);
   --color-panel-solid: #0e0f18;
   --color-fg: #f5f2ea;
   --color-fg-2: rgb(245 242 234 / 0.66);
@@ -451,4 +451,31 @@ input[type='range'].range:hover::-webkit-slider-thumb {
   left: calc(100% + 8px);
   top: 50%;
   translate: 0 -50%;
+}
+
+/* ------------------------------------------------------------ XP bursts */
+
+.xp-burst {
+  pointer-events: none;
+  font-family: var(--font-mono);
+  font-weight: 700;
+  font-size: 15px;
+  color: #fff3d6;
+  padding: 3px 9px;
+  border-radius: 999px;
+  background: linear-gradient(135deg, #ffb547, #ff7a3d);
+  box-shadow: 0 6px 24px rgb(255 140 60 / 0.6);
+  animation: xp-rise 2.5s cubic-bezier(0.2, 0.8, 0.3, 1) forwards;
+}
+.xp-burst.big {
+  font-size: 19px;
+  background: linear-gradient(135deg, #5ef2d0, #2fb6ff);
+  color: #04131a;
+  box-shadow: 0 6px 30px rgb(60 220 230 / 0.7);
+}
+@keyframes xp-rise {
+  0% { opacity: 0; transform: translateY(14px) scale(0.6); }
+  15% { opacity: 1; transform: translateY(0) scale(1.08); }
+  70% { opacity: 1; transform: translateY(-34px) scale(1); }
+  100% { opacity: 0; transform: translateY(-60px) scale(0.95); }
 }
