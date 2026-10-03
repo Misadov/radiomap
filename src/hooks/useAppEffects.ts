@@ -3,7 +3,8 @@
 import { useEffect } from 'react';
 import { engine } from '@/lib/audio/engine';
 import { openCountry, openPlace, playRandom } from '@/lib/actions';
-import { dictionaries } from '@/lib/i18n';
+import { countryName, dictionaries } from '@/lib/i18n';
+import { ACHIEVEMENTS } from '@/lib/passport';
 import { stationByUuid, toSaved, whenStreams } from '@/store/data';
 import { importLegacyFavorites, useLibrary } from '@/store/library';
 import { usePlayer } from '@/store/player';
@@ -185,4 +186,23 @@ export function useAppEffects() {
   useHotkeys();
   useDeepLink();
   useTrackInfo();
+  useRewards();
+}
+
+/** Toasts for passport milestones (new country, achievements). */
+export function useRewards() {
+  useEffect(() => {
+    const on = (e: Event) => {
+      const d = (e as CustomEvent<{ country: string; newCountry: boolean; achievements: string[] }>).detail;
+      const lang = useLibrary.getState().lang;
+      const t = dictionaries[lang];
+      if (d.newCountry && d.country) useUI.getState().toast(`🌍 ${t.newCountry(countryName(d.country, lang))}`);
+      for (const id of d.achievements) {
+        const a = ACHIEVEMENTS.find((x) => x.id === id);
+        if (a) useUI.getState().toast(`${a.icon} ${t.unlocked((lang === 'ru' ? a.ru : a.en)[0])}`);
+      }
+    };
+    window.addEventListener('radiomap:reward', on);
+    return () => window.removeEventListener('radiomap:reward', on);
+  }, []);
 }

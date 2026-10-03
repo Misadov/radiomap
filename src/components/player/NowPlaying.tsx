@@ -17,6 +17,7 @@ import { Icon } from '../ui/Icon';
 import { IconButton } from '../ui/IconButton';
 import { ErrorActions, FavoriteButton, PlayButton, ShareButton, StatusLine, VolumeControl } from './controls';
 import { Visualizer } from './Visualizer';
+import { VizSettings } from './VizSettings';
 
 const homepageCache = new Map<string, string | null>();
 
@@ -68,12 +69,15 @@ export function NowPlaying() {
     >
       <div className="flex items-center justify-between px-4 pt-3.5 pb-1">
         <span className="label-mono text-fg-3">{t.nowPlaying}</span>
-        <IconButton icon={mobile ? 'chevronDown' : 'x'} label={t.close} size="sm" tip="left" onClick={close} />
+        <div className="flex items-center gap-1">
+          <VizSettings />
+          <IconButton icon={mobile ? 'chevronDown' : 'x'} label={t.close} size="sm" tip="left" onClick={close} />
+        </div>
       </div>
 
       <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 pb-6">
         <div className="relative mx-auto mt-1 aspect-square w-full max-w-[300px]">
-          <Visualizer variant="ring" className="absolute inset-0 h-full w-full" />
+          <Visualizer slot="full" className="absolute inset-0 h-full w-full" />
           <div className="absolute inset-[22%] overflow-hidden rounded-[28px] shadow-[0_20px_60px_-15px_rgba(0,0,0,0.9)]">
             <Artwork src={station.favicon} name={station.name} size={400} radius={28} className="!h-full !w-full" />
           </div>

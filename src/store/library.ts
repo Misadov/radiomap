@@ -4,6 +4,7 @@ import { create } from 'zustand';
 import { createJSONStorage, persist } from 'zustand/middleware';
 import type { Lang } from '@/lib/i18n';
 import type { SavedStation } from '@/lib/types';
+import { ACHIEVEMENTS, dayKey, EMPTY_PASSPORT, XP, type PassportStats } from '@/lib/passport';
 
 const MAX_RECENTS = 60;
 
@@ -13,6 +14,32 @@ export function detectLang(): Lang {
   const langs = navigator.languages?.length ? navigator.languages : [navigator.language];
   return langs.some((l) => /^(ru|be|uk|kk)\b/i.test(l)) ? 'ru' : 'en';
 }
+
+export type Basemap = 'satellite' | 'map';
+export type VizMode = 'bars' | 'mirror' | 'wave' | 'ring' | 'off';
+export type VizColor = 'sunset' | 'aurora' | 'neon' | 'ice' | 'mono';
+
+export interface Settings {
+  basemap: Basemap;
+  /** Tilted camera, terrain and 3D buildings. */
+  view3d: boolean;
+  /** Visualiser behind the compact player bar. */
+  vizBar: VizMode;
+  /** Visualiser around the artwork in the full player. */
+  vizFull: VizMode;
+  vizColor: VizColor;
+  /** 0.2..1 */
+  vizIntensity: number;
+}
+
+export const DEFAULT_SETTINGS: Settings = {
+  basemap: 'satellite',
+  view3d: true,
+  vizBar: 'bars',
+  vizFull: 'ring',
+  vizColor: 'sunset',
+  vizIntensity: 0.7,
+};
 
 export interface RecentEntry {
   station: SavedStation;
@@ -26,7 +53,11 @@ interface LibraryState {
   favorites: SavedStation[];
   recents: RecentEntry[];
   legacyImported: boolean;
+  passport: PassportStats;
+  settings: Settings;
 
+  setSettings: (patch: Partial<Settings>) => void;
+  addListen: (sec: number) => void;
   setLang: (lang: Lang) => void;
   setVolume: (volume: number) => void;
   setMuted: (muted: boolean) => void;
@@ -36,6 +67,31 @@ interface LibraryState {
   addRecent: (station: SavedStation) => void;
   clearRecents: () => void;
   refreshSaved: (fresh: Map<string, SavedStation>) => void;
+  stamp: (visit: Visit) => StampResult;
+  resetPassport: () => void;
+}
+
+export interface Visit {
+  stationId: string;
+  stationName: string;
+  country: string;
+  placeKey: string | null;
+  genres: string[];
+  lat: number | null;
+  lng: number | null;
+}
+
+export interface StampResult {
+  xp: number;
+  newCountry: boolean;
+  newPlace: boolean;
+  achievements: string[];
+}
+
+function distance(a: number, b: number, c: number, d: number) {
+  const r = Math.PI / 180;
+  const h = Math.sin(((c - a) * r) / 2) ** 2 + Math.cos(a * r) * Math.cos(c * r) * Math.sin(((d - b) * r) / 2) ** 2;
+  return 12742 * Math.asin(Math.min(1, Math.sqrt(h)));
 }
 
 export const useLibrary = create<LibraryState>()(
@@ -47,6 +103,74 @@ export const useLibrary = create<LibraryState>()(
       favorites: [],
       recents: [],
       legacyImported: false,
+      passport: EMPTY_PASSPORT,
+      settings: DEFAULT_SETTINGS,
+
+      setSettings: (patch) => set((s) => ({ settings: { ...DEFAULT_SETTINGS, ...s.settings, ...patch } })),
+      addListen: (sec) => set((s) => ({ passport: { ...EMPTY_PASSPORT, ...s.passport, listenSec: (s.passport.listenSec ?? 0) + sec } })),
+
+      stamp: (visit) => {
+        const p = { ...EMPTY_PASSPORT, ...get().passport };
+        const now = Date.now();
+        let xp = XP.play;
+        const next: PassportStats = {
+          ...p,
+          plays: p.plays + 1,
+          countries: { ...p.countries },
+          places: { ...p.places },
+          genres: { ...p.genres },
+          achievements: { ...p.achievements },
+          countryPlays: { ...p.countryPlays },
+          genrePlays: { ...p.genrePlays },
+          placePlays: { ...p.placePlays },
+          stationPlays: { ...p.stationPlays },
+          days: p.days.includes(dayKey()) ? p.days : [...p.days, dayKey()].slice(-400),
+        };
+        const inc = (t: Record<string, number>, k: string) => (t[k] = (t[k] ?? 0) + 1);
+        if (visit.country) inc(next.countryPlays, visit.country);
+        if (visit.placeKey) inc(next.placePlays, visit.placeKey);
+        for (const g of visit.genres) inc(next.genrePlays, g);
+        if (visit.stationId) {
+          next.stationPlays[visit.stationId] = { n: (p.stationPlays[visit.stationId]?.n ?? 0) + 1, name: visit.stationName };
+          // Keep the tally small: drop single plays once it grows.
+          const ids = Object.keys(next.stationPlays);
+          if (ids.length > 300) for (const id of ids) if (next.stationPlays[id].n < 2 && id !== visit.stationId) delete next.stationPlays[id];
+        }
+        const newCountry = !!visit.country && !next.countries[visit.country];
+        if (newCountry) {
+          next.countries[visit.country] = now;
+          xp += XP.country;
+        }
+        const newPlace = !!visit.placeKey && !next.places[visit.placeKey];
+        if (newPlace) {
+          next.places[visit.placeKey!] = now;
+          xp += XP.place;
+        }
+        for (const g of visit.genres) {
+          if (next.genres[g]) continue;
+          next.genres[g] = now;
+          xp += XP.genre;
+        }
+        if (visit.lat !== null && visit.lng !== null) {
+          if (p.lastLat !== null && p.lastLng !== null) {
+            next.bestJumpKm = Math.max(p.bestJumpKm, distance(p.lastLat, p.lastLng, visit.lat, visit.lng));
+          }
+          next.lastLat = visit.lat;
+          next.lastLng = visit.lng;
+        }
+        const unlocked: string[] = [];
+        for (const a of ACHIEVEMENTS) {
+          if (!next.achievements[a.id] && a.test(next)) {
+            next.achievements[a.id] = now;
+            unlocked.push(a.id);
+            xp += XP.achievement;
+          }
+        }
+        next.xp = p.xp + xp;
+        set({ passport: next });
+        return { xp, newCountry, newPlace, achievements: unlocked };
+      },
+      resetPassport: () => set({ passport: EMPTY_PASSPORT }),
 
       setLang: (lang) => set({ lang }),
       setVolume: (volume) => set({ volume: Math.min(1, Math.max(0, volume)), muted: false }),
@@ -97,7 +221,18 @@ export const useLibrary = create<LibraryState>()(
         favorites: s.favorites,
         recents: s.recents,
         legacyImported: s.legacyImported,
+        passport: s.passport,
+        settings: s.settings,
       }),
+      merge: (persisted, current) => {
+        const p = (persisted ?? {}) as Partial<LibraryState>;
+        return {
+          ...current,
+          ...p,
+          passport: { ...EMPTY_PASSPORT, ...p.passport },
+          settings: { ...DEFAULT_SETTINGS, ...p.settings },
+        };
+      },
     },
   ),
 );

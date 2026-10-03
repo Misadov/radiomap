@@ -1,14 +1,16 @@
 'use client';
 
 import { useMemo, useState } from 'react';
-import { locateMe, playRandom } from '@/lib/actions';
-import { useT } from '@/lib/i18n';
+import { locateMe, openCountry, playRandom } from '@/lib/actions';
+import { countryName, formatNumber, useLang, useT } from '@/lib/i18n';
 import { useData } from '@/store/data';
+import { useLibrary } from '@/store/library';
 import { useUI } from '@/store/ui';
 import { RowsSkeleton, StationList } from '../station/StationList';
+import { Flag } from '../ui/Flag';
 import { Icon } from '../ui/Icon';
 import { Spinner } from '../ui/Eq';
-import { countGenres, GenreChips } from './GenreChips';
+import { chipClass, countGenres, GenreChips } from './GenreChips';
 import { SectionTitle } from './ViewHeader';
 
 export function ExploreView() {
@@ -18,7 +20,7 @@ export function ExploreView() {
   const inView = useUI((s) => s.inView);
   const worldView = useUI((s) => s.worldView);
   const genre = useUI((s) => s.genre);
-  const setGenre = useUI((s) => s.setGenre);
+  const popular = useUI((s) => s.popular);
   const [locating, setLocating] = useState(false);
 
   const counts = useMemo(() => {
@@ -58,17 +60,79 @@ export function ExploreView() {
       </div>
 
       <div className="mt-4">
-        <GenreChips value={genre} onChange={setGenre} counts={counts} />
+        <GenreChips
+          value={genre}
+          counts={counts}
+          allActive={genre < 0 && !popular}
+          onChange={(g) => {
+            useUI.getState().setGenre(g);
+            if (g < 0) useUI.getState().setPopular(false);
+          }}
+          leading={
+            <button type="button" className={chipClass(popular)} aria-pressed={popular} onClick={() => useUI.getState().setPopular(!popular)}>
+              <Icon name="sparkles" size={14} />
+              {t.popular}
+            </button>
+          }
+        />
       </div>
 
-      <SectionTitle>{worldView ? t.popularWorld : t.popularHere}</SectionTitle>
-      {!stations || !inView ? (
-        <RowsSkeleton />
-      ) : inView.length ? (
-        <StationList items={inView} />
+      {popular ? (
+        <>
+          <SectionTitle>{worldView ? t.popularWorld : t.popularHere}</SectionTitle>
+          {!stations || !inView ? (
+            <RowsSkeleton />
+          ) : inView.length ? (
+            <StationList items={inView} />
+          ) : (
+            <p className="px-2 py-6 text-center text-[13px] text-fg-3">{t.noStationsForFilter}</p>
+          )}
+        </>
       ) : (
-        <p className="px-2 py-6 text-center text-[13px] text-fg-3">{t.noStationsForFilter}</p>
+        <CountryList genre={genre} />
       )}
     </div>
+  );
+}
+
+function CountryList({ genre }: { genre: number }) {
+  const t = useT();
+  const lang = useLang();
+  const stations = useData((s) => s.stations);
+  const derived = useData((s) => s.derived);
+  const visited = useLibrary((s) => s.passport.countries);
+
+  const list = useMemo(() => {
+    if (!derived || !stations) return null;
+    const rows = derived.countries.map(({ cc, count }) => {
+      if (genre < 0) return { cc, count };
+      let n = 0;
+      for (const i of derived.countryStations.get(cc) ?? []) if (stations.genres[i] & (1 << genre)) n++;
+      return { cc, count: n };
+    });
+    return rows.filter((r) => r.count > 0).sort((a, b) => b.count - a.count);
+  }, [derived, stations, genre]);
+
+  if (!list) return <RowsSkeleton />;
+  return (
+    <>
+      <SectionTitle aside={<span className="font-mono text-[11px] text-fg-3">{formatNumber(list.length, lang)}</span>}>{t.sectionCountries}</SectionTitle>
+      <div className="flex flex-col">
+        {list.map(({ cc, count }) => (
+          <button
+            key={cc}
+            type="button"
+            onClick={() => openCountry(cc, { push: true })}
+            className="group flex h-12 items-center gap-3 rounded-xl px-2 text-left transition-colors hover:bg-elev"
+          >
+            <Flag cc={cc} size={26} className="shrink-0" />
+            <span className="min-w-0 flex-1 truncate text-[14px] font-semibold text-fg-2 group-hover:text-fg">{countryName(cc, lang)}</span>
+            {visited[cc] ? <span title={t.visited} className="size-1.5 shrink-0 rounded-full bg-[#5ef2d0] shadow-[0_0_8px_#5ef2d0]" /> : null}
+            <span className="shrink-0 font-mono text-[11.5px] text-fg-3">{formatNumber(count, lang)}</span>
+            <Icon name="chevronRight" size={16} className="shrink-0 text-fg-3" />
+          </button>
+        ))}
+      </div>
+    </>
   );
 }

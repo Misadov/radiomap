@@ -10,7 +10,9 @@
 
 ## Features
 
-- **A real 3D globe.** WebGL rendering (MapLibre GL) with a custom "earth at night" style: every city with radio stations glows, brighter where there are more of them. It turns into a detailed street map as you zoom in.
+- **A real 3D globe in colour.** WebGL rendering (MapLibre GL) over satellite imagery with 3D terrain: every city with radio stations glows, brighter where there are more of them. Zoom all the way down to streets (satellite + roads + labels), switch between satellite and a dark map, and toggle 3D (on by default): terrain plus extruded OpenStreetMap buildings at street level.
+- **Customisable visualiser.** Bars, mirror, wave, ring or liquid; five palettes, intensity, or off — separately for the mini player and the full player.
+- **Radio passport (gamification).** Every new country, city and genre you tune into earns XP and a stamp; level up, unlock achievements, see visited cities ringed on the globe, and see your stats (top country, city, genre, station, listening time, streaks), share the passport as an image, and hit *Fly somewhere new* for a station in a country you haven't heard yet.
 - **~45,000 stations, ~6,500 places, 219 countries.** Duplicates are merged, and every station that can be located is placed in its city or region.
 - **Instant search** across stations, cities, regions, countries and genres. It ignores accents and works in English and Russian ("jazz berlin", "москва", "sao paulo").
 - **Genre filter on the globe.** Pick *Jazz* and only the cities playing jazz stay lit, in the genre's colour.
@@ -73,7 +75,7 @@ The first run downloads about 220 MB of GeoNames data into `.cache/`. A GitHub A
 
 - Station directory: [radio-browser.info](https://www.radio-browser.info/), a community project (public domain data).
 - Places: [GeoNames](https://www.geonames.org/), CC BY 4.0.
-- Map tiles: [OpenFreeMap](https://openfreemap.org) · [© OpenMapTiles](https://www.openmaptiles.org/) · data © [OpenStreetMap contributors](https://www.openstreetmap.org/copyright). Shaded relief from [Natural Earth](https://www.naturalearthdata.com/).
+- Map tiles: [OpenFreeMap](https://openfreemap.org) · [© OpenMapTiles](https://www.openmaptiles.org/) · data © [OpenStreetMap contributors](https://www.openstreetmap.org/copyright). Satellite imagery © Esri, Maxar, Earthstar Geographics; terrain from [AWS Terrain Tiles](https://registry.opendata.aws/terrain-tiles/).
 - Flags: [flag-icons](https://github.com/lipis/flag-icons) (MIT).
 
 ## License

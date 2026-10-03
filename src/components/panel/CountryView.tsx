@@ -8,6 +8,7 @@ import { placeName, useData } from '@/store/data';
 import { useUI } from '@/store/ui';
 import { RowsSkeleton, StationList } from '../station/StationList';
 import { Flag } from '../ui/Flag';
+import { Icon } from '../ui/Icon';
 import { IconButton } from '../ui/IconButton';
 import { countGenres, GenreChips } from './GenreChips';
 import { SectionTitle, ViewHeader } from './ViewHeader';
@@ -37,7 +38,7 @@ export function CountryView({ cc }: { cc: string }) {
   }, [places, cc]);
 
   const name = countryName(cc, lang);
-  const visiblePlaces = showAllPlaces ? topPlaces.slice(0, 60) : topPlaces.slice(0, 12);
+  const visiblePlaces = showAllPlaces ? topPlaces : topPlaces.slice(0, 15);
 
   return (
     <div className="animate-fade-in" key={cc}>
@@ -59,7 +60,7 @@ export function CountryView({ cc }: { cc: string }) {
         <>
           <SectionTitle
             aside={
-              topPlaces.length > 12 ? (
+              topPlaces.length > 15 ? (
                 <button type="button" onClick={() => setShowAllPlaces((v) => !v)} className="text-[12px] font-semibold text-fg-3 hover:text-fg">
                   {showAllPlaces ? t.showLess : t.showAll}
                 </button>
@@ -68,16 +69,18 @@ export function CountryView({ cc }: { cc: string }) {
           >
             {t.sectionPlaces}
           </SectionTitle>
-          <div className="flex flex-wrap gap-1.5 px-1">
+          <div className="flex flex-col">
             {visiblePlaces.map((p) => (
               <button
                 key={p}
                 type="button"
                 onClick={() => openPlace(p, { push: true })}
-                className="flex h-8 items-center gap-2 rounded-full border border-line px-3 text-[12.5px] font-semibold text-fg-2 transition-colors hover:border-line-2 hover:bg-elev hover:text-fg"
+                className="group flex h-11 items-center gap-3 rounded-xl px-2 text-left transition-colors hover:bg-elev"
               >
-                {placeName(p, lang)}
-                <span className="font-mono text-[10.5px] text-fg-3">{formatNumber(places!.stations[p], lang)}</span>
+                <Icon name="pin" size={16} className="shrink-0 text-accent/80" />
+                <span className="min-w-0 flex-1 truncate text-[14px] font-semibold text-fg-2 group-hover:text-fg">{placeName(p, lang)}</span>
+                <span className="shrink-0 font-mono text-[11.5px] text-fg-3">{formatNumber(places!.stations[p], lang)}</span>
+                <Icon name="chevronRight" size={16} className="shrink-0 text-fg-3" />
               </button>
             ))}
           </div>

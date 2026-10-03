@@ -4,6 +4,7 @@ import { mapBus } from './map-bus';
 import { nearestPlace, stationAt, useData, whenStations } from '@/store/data';
 import { usePlayer } from '@/store/player';
 import { useUI } from '@/store/ui';
+import { useLibrary } from '@/store/library';
 
 /** On phones, reveal the map behind the sheet and drop the keyboard. */
 function revealMap() {
@@ -25,7 +26,7 @@ export function openCountry(cc: string, opts: { push?: boolean; fly?: boolean } 
 }
 
 /** "Surprise me": fly to a random well-ranked station somewhere on the globe and play it. */
-export async function playRandom() {
+export async function playRandom(opts: { newCountry?: boolean } = {}) {
   await whenStations();
   const { stations, places } = useData.getState();
   if (!stations || !places) return;
@@ -33,9 +34,11 @@ export async function playRandom() {
   const bit = genre < 0 ? 0 : 1 << genre;
   const pool: number[] = [];
   const current = usePlayer.getState().station;
+  const visited = opts.newCountry ? useLibrary.getState().passport.countries : null;
   for (let i = 0; i < stations.count && pool.length < 6000; i++) {
     if (stations.place[i] < 0 || (bit && !(stations.genres[i] & bit))) continue;
     if (current && current.index === i) continue;
+    if (visited && visited[stations.country[i]]) continue;
     pool.push(i);
   }
   if (!pool.length) return;

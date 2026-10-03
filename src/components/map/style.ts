@@ -1,8 +1,9 @@
-import type { ExpressionSpecification, LayerSpecification, StyleSpecification } from 'maplibre-gl';
+import type { ExpressionSpecification, LayerSpecification, Map as MapLibreMap, StyleSpecification } from 'maplibre-gl';
 import type { Lang } from '@/lib/i18n';
+import type { Basemap } from '@/store/library';
 
 // A custom "earth at night" basemap on top of OpenFreeMap vector tiles
-// (OpenMapTiles schema) and Natural Earth shaded relief for the globe view.
+// (OpenMapTiles schema) over Esri satellite imagery and AWS terrain.
 
 const OFM = 'https://tiles.openfreemap.org';
 const REGULAR = ['Noto Sans Regular'];
@@ -19,77 +20,131 @@ export function labelField(lang: Lang): ExpressionSpecification {
 export const LABEL_LAYERS = ['label-ocean', 'label-country', 'label-state', 'label-city-major', 'label-city', 'label-town'];
 
 const lineType = ['match', ['geometry-type'], ['LineString', 'MultiLineString'], true, false] as ExpressionSpecification;
-const polyType = ['match', ['geometry-type'], ['Polygon', 'MultiPolygon'], true, false] as ExpressionSpecification;
 const pointType = ['match', ['geometry-type'], ['Point', 'MultiPoint'], true, false] as ExpressionSpecification;
 
-export function buildStyle(lang: Lang): StyleSpecification {
+const polyType = ['match', ['geometry-type'], ['Polygon', 'MultiPolygon'], true, false] as ExpressionSpecification;
+
+// Layers that belong to one basemap only carry `metadata.mode`; the rest are shared.
+const SAT = { mode: 'satellite' };
+const MAP = { mode: 'map' };
+
+/** Road colours per basemap: white-ish over imagery, muted greys on the dark map. */
+const ROADS: Record<Basemap, Record<string, string>> = {
+  satellite: { 'road-minor': 'rgba(255, 255, 255, 0.35)', 'road-major': 'rgba(255, 236, 190, 0.55)', 'road-motorway': 'rgba(255, 210, 120, 0.75)' },
+  map: { 'road-minor': 'rgba(150, 165, 200, 0.22)', 'road-major': 'rgba(170, 185, 220, 0.38)', 'road-motorway': 'rgba(255, 190, 120, 0.42)' },
+};
+
+/** Switch basemap, terrain and buildings on a live map without touching our data layers. */
+export function applyMapMode(map: MapLibreMap, basemap: Basemap, view3d: boolean) {
+  for (const layer of map.getStyle().layers) {
+    const mode = (layer.metadata as { mode?: string } | undefined)?.mode;
+    if (!mode) continue;
+    const on = mode === basemap || (mode === '3d' && view3d) || (mode === 'map-flat' && basemap === 'map' && !view3d);
+    map.setLayoutProperty(layer.id, 'visibility', on ? 'visible' : 'none');
+  }
+  for (const [id, color] of Object.entries(ROADS[basemap])) if (map.getLayer(id)) map.setPaintProperty(id, 'line-color', color);
+  if (map.getLayer('buildings-3d')) {
+    map.setPaintProperty('buildings-3d', 'fill-extrusion-color', basemap === 'satellite' ? '#e9e4da' : '#2a3350');
+    map.setPaintProperty('buildings-3d', 'fill-extrusion-opacity', basemap === 'satellite' ? 0.82 : 0.9);
+  }
+  map.setTerrain(view3d ? { source: 'terrain', exaggeration: 1.4 } : null);
+}
+
+export function buildStyle(lang: Lang, basemap: Basemap = 'satellite', view3d = true): StyleSpecification {
   const name = labelField(lang);
+  const vis = (on: boolean) => ({ visibility: on ? ('visible' as const) : ('none' as const) });
+  const sat = basemap === 'satellite';
   const layers: LayerSpecification[] = [
-    // Grey relief over a navy base reads as moonlit land.
-    { id: 'background', type: 'background', paint: { 'background-color': '#0c1830' } },
+    { id: 'background', type: 'background', paint: { 'background-color': sat ? '#0b1a2e' : '#0d111d' } },
+    // Colour satellite imagery (like Google Earth), detailed down to street level.
     {
-      id: 'relief',
+      id: 'satellite',
       type: 'raster',
-      source: 'relief',
-      maxzoom: 8,
+      source: 'satellite',
+      metadata: SAT,
+      layout: vis(sat),
       paint: {
-        'raster-opacity': ['interpolate', ['linear'], ['zoom'], 0, 0.55, 5, 0.45, 7.5, 0],
-        'raster-saturation': -1,
-        'raster-brightness-min': 0,
-        'raster-brightness-max': 0.36,
-        'raster-contrast': 0.35,
-        'raster-fade-duration': 0,
+        'raster-fade-duration': 150,
+        'raster-saturation': 0.1,
+        'raster-contrast': 0.05,
+        // Slightly dimmed from space so the station lights still glow.
+        'raster-brightness-max': ['interpolate', ['linear'], ['zoom'], 0, 0.82, 6, 0.92, 10, 1],
+      },
+    },
+    // ---- "plain map": a dark grey cartographic style ----
+    {
+      id: 'map-hillshade',
+      type: 'hillshade',
+      source: 'hillshade',
+      metadata: MAP,
+      layout: vis(!sat),
+      paint: {
+        'hillshade-shadow-color': 'rgba(0, 0, 0, 0.55)',
+        'hillshade-highlight-color': 'rgba(150, 170, 220, 0.12)',
+        'hillshade-accent-color': 'rgba(0, 0, 0, 0.2)',
+        'hillshade-exaggeration': 0.45,
       },
     },
     {
-      id: 'landcover-ice',
+      id: 'map-landcover',
       type: 'fill',
       source: 'omt',
       'source-layer': 'landcover',
-      filter: ['all', polyType, ['match', ['get', 'subclass'], ['glacier', 'ice_shelf'], true, false]],
-      paint: { 'fill-color': '#1a2438', 'fill-opacity': ['interpolate', ['linear'], ['zoom'], 0, 0.55, 8, 0.25] },
+      metadata: MAP,
+      layout: vis(!sat),
+      filter: ['match', ['get', 'class'], ['wood', 'forest', 'grass'], true, false],
+      paint: { 'fill-color': '#122019', 'fill-opacity': ['interpolate', ['linear'], ['zoom'], 4, 0.35, 10, 0.6] },
     },
     {
-      id: 'landuse-urban',
+      id: 'map-landuse',
       type: 'fill',
       source: 'omt',
       'source-layer': 'landuse',
-      minzoom: 7,
-      filter: ['all', polyType, ['match', ['get', 'class'], ['residential', 'suburb', 'neighbourhood', 'commercial', 'industrial'], true, false]],
-      paint: { 'fill-color': '#1b1d2b', 'fill-opacity': ['interpolate', ['linear'], ['zoom'], 7, 0, 9, 0.55] },
+      minzoom: 8,
+      metadata: MAP,
+      layout: vis(!sat),
+      filter: ['match', ['get', 'class'], ['residential', 'suburb', 'neighbourhood', 'commercial', 'industrial'], true, false],
+      paint: { 'fill-color': '#171c2c', 'fill-opacity': 0.8 },
     },
     {
-      id: 'park',
+      id: 'map-park',
       type: 'fill',
       source: 'omt',
       'source-layer': 'park',
-      minzoom: 9,
-      paint: { 'fill-color': '#0d1a1c', 'fill-opacity': 0.6 },
+      minzoom: 8,
+      metadata: MAP,
+      layout: vis(!sat),
+      paint: { 'fill-color': '#13241c', 'fill-opacity': 0.7 },
     },
     {
-      id: 'water',
+      id: 'map-water',
       type: 'fill',
       source: 'omt',
       'source-layer': 'water',
-      filter: ['all', polyType, ['!=', ['get', 'brunnel'], 'tunnel']],
-      paint: { 'fill-color': '#050a17', 'fill-antialias': true },
+      metadata: MAP,
+      layout: vis(!sat),
+      filter: polyType,
+      paint: { 'fill-color': '#0a1d3a' },
     },
     {
-      id: 'waterway',
+      id: 'map-waterway',
       type: 'line',
       source: 'omt',
       'source-layer': 'waterway',
-      minzoom: 7,
-      filter: lineType,
-      paint: { 'line-color': '#07101f', 'line-width': ['interpolate', ['linear'], ['zoom'], 7, 0.5, 14, 2.5] },
+      minzoom: 8,
+      metadata: MAP,
+      layout: vis(!sat),
+      paint: { 'line-color': '#0f2546', 'line-width': ['interpolate', ['linear'], ['zoom'], 8, 0.5, 14, 2.5] },
     },
     {
-      id: 'building',
+      id: 'map-buildings',
       type: 'fill',
       source: 'omt',
       'source-layer': 'building',
       minzoom: 13,
-      paint: { 'fill-color': '#161a28', 'fill-opacity': ['interpolate', ['linear'], ['zoom'], 13, 0, 15, 0.9] },
+      metadata: { mode: 'map-flat' },
+      layout: vis(!sat && !view3d),
+      paint: { 'fill-color': '#1f2639', 'fill-outline-color': '#2b3450' },
     },
     {
       id: 'road-minor',
@@ -100,7 +155,7 @@ export function buildStyle(lang: Lang): StyleSpecification {
       filter: ['all', lineType, ['match', ['get', 'class'], ['minor', 'service', 'tertiary'], true, false]],
       layout: { 'line-cap': 'round', 'line-join': 'round' },
       paint: {
-        'line-color': 'rgba(255, 236, 210, 0.07)',
+        'line-color': ROADS[basemap]['road-minor'],
         'line-width': ['interpolate', ['exponential', 1.5], ['zoom'], 11, 0.4, 16, 5],
       },
     },
@@ -113,7 +168,7 @@ export function buildStyle(lang: Lang): StyleSpecification {
       filter: ['all', lineType, ['match', ['get', 'class'], ['primary', 'secondary', 'trunk'], true, false]],
       layout: { 'line-cap': 'round', 'line-join': 'round' },
       paint: {
-        'line-color': 'rgba(255, 186, 110, 0.13)',
+        'line-color': ROADS[basemap]['road-major'],
         'line-width': ['interpolate', ['exponential', 1.5], ['zoom'], 6, 0.3, 12, 1.4, 16, 7],
       },
     },
@@ -126,7 +181,7 @@ export function buildStyle(lang: Lang): StyleSpecification {
       filter: ['all', lineType, ['==', ['get', 'class'], 'motorway']],
       layout: { 'line-cap': 'round', 'line-join': 'round' },
       paint: {
-        'line-color': 'rgba(255, 170, 90, 0.2)',
+        'line-color': ROADS[basemap]['road-motorway'],
         'line-width': ['interpolate', ['exponential', 1.5], ['zoom'], 4, 0.3, 10, 1.4, 16, 9],
       },
     },
@@ -139,7 +194,7 @@ export function buildStyle(lang: Lang): StyleSpecification {
       filter: ['all', ['==', ['get', 'admin_level'], 4], ['!=', ['get', 'maritime'], 1]],
       layout: { 'line-join': 'round' },
       paint: {
-        'line-color': 'rgba(255, 255, 255, 0.08)',
+        'line-color': 'rgba(255, 255, 255, 0.25)',
         'line-width': ['interpolate', ['linear'], ['zoom'], 3, 0.4, 10, 1.2],
         'line-dasharray': [2, 2],
       },
@@ -152,8 +207,25 @@ export function buildStyle(lang: Lang): StyleSpecification {
       filter: ['all', ['==', ['get', 'admin_level'], 2], ['!=', ['get', 'maritime'], 1]],
       layout: { 'line-join': 'round', 'line-cap': 'round' },
       paint: {
-        'line-color': 'rgba(255, 214, 160, 0.24)',
+        'line-color': 'rgba(255, 230, 190, 0.55)',
         'line-width': ['interpolate', ['linear'], ['zoom'], 0, 0.45, 4, 0.9, 10, 1.8],
+      },
+    },
+    // OpenStreetMap building footprints with heights, extruded in 3D.
+    {
+      id: 'buildings-3d',
+      type: 'fill-extrusion',
+      source: 'omt',
+      'source-layer': 'building',
+      minzoom: 14,
+      metadata: { mode: '3d' },
+      layout: vis(view3d),
+      paint: {
+        'fill-extrusion-color': sat ? '#e9e4da' : '#2a3350',
+        'fill-extrusion-height': ['interpolate', ['linear'], ['zoom'], 14, 0, 15, ['coalesce', ['get', 'render_height'], 8]],
+        'fill-extrusion-base': ['coalesce', ['get', 'render_min_height'], 0],
+        'fill-extrusion-opacity': sat ? 0.82 : 0.9,
+        'fill-extrusion-vertical-gradient': true,
       },
     },
     {
@@ -191,8 +263,8 @@ export function buildStyle(lang: Lang): StyleSpecification {
         'text-max-width': 7,
       },
       paint: {
-        'text-color': 'rgba(245, 236, 220, 0.42)',
-        'text-halo-color': 'rgba(4, 6, 12, 0.85)',
+        'text-color': 'rgba(255, 250, 240, 0.8)',
+        'text-halo-color': 'rgba(0, 0, 0, 0.75)',
         'text-halo-width': 1.2,
         'text-opacity': ['interpolate', ['linear'], ['zoom'], 2.7, 0, 3.2, 1],
       },
@@ -213,7 +285,7 @@ export function buildStyle(lang: Lang): StyleSpecification {
         'text-letter-spacing': 0.14,
         'text-max-width': 8,
       },
-      paint: { 'text-color': 'rgba(220, 210, 195, 0.3)', 'text-halo-color': 'rgba(4, 6, 12, 0.8)', 'text-halo-width': 1 },
+      paint: { 'text-color': 'rgba(255, 255, 255, 0.6)', 'text-halo-color': 'rgba(4, 6, 12, 0.8)', 'text-halo-width': 1 },
     },
     {
       id: 'label-city-major',
@@ -232,8 +304,8 @@ export function buildStyle(lang: Lang): StyleSpecification {
         'text-radial-offset': 0.9,
       },
       paint: {
-        'text-color': 'rgba(245, 240, 230, 0.72)',
-        'text-halo-color': 'rgba(4, 6, 12, 0.9)',
+        'text-color': 'rgba(255, 255, 255, 0.95)',
+        'text-halo-color': 'rgba(0, 0, 0, 0.8)',
         'text-halo-width': 1.3,
       },
     },
@@ -254,8 +326,8 @@ export function buildStyle(lang: Lang): StyleSpecification {
         'text-radial-offset': 0.8,
       },
       paint: {
-        'text-color': 'rgba(245, 240, 230, 0.6)',
-        'text-halo-color': 'rgba(4, 6, 12, 0.9)',
+        'text-color': 'rgba(255, 255, 255, 0.9)',
+        'text-halo-color': 'rgba(0, 0, 0, 0.8)',
         'text-halo-width': 1.2,
       },
     },
@@ -275,8 +347,8 @@ export function buildStyle(lang: Lang): StyleSpecification {
         'text-radial-offset': 0.7,
       },
       paint: {
-        'text-color': 'rgba(235, 228, 215, 0.45)',
-        'text-halo-color': 'rgba(4, 6, 12, 0.85)',
+        'text-color': 'rgba(255, 255, 255, 0.85)',
+        'text-halo-color': 'rgba(0, 0, 0, 0.75)',
         'text-halo-width': 1,
       },
     },
@@ -287,6 +359,7 @@ export function buildStyle(lang: Lang): StyleSpecification {
     name: 'RadioMap Night',
     projection: { type: 'globe' },
     glyphs: `${OFM}/fonts/{fontstack}/{range}.pbf`,
+    ...(view3d ? { terrain: { source: 'terrain', exaggeration: 1.4 } } : {}),
     sky: {
       'sky-color': '#0a1538',
       'horizon-color': '#2d55b8',
@@ -298,12 +371,27 @@ export function buildStyle(lang: Lang): StyleSpecification {
     },
     sources: {
       omt: { type: 'vector', url: `${OFM}/planet` },
-      relief: {
+      satellite: {
         type: 'raster',
-        tiles: [`${OFM}/natural_earth/ne2sr/{z}/{x}/{y}.png`],
+        tiles: ['https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}'],
         tileSize: 256,
-        maxzoom: 6,
-        attribution: '<a href="https://www.naturalearthdata.com/" target="_blank">Natural Earth</a>',
+        maxzoom: 19,
+        attribution: 'Imagery © <a href="https://www.esri.com/" target="_blank">Esri</a>, Maxar, Earthstar Geographics',
+      },
+      hillshade: {
+        type: 'raster-dem',
+        tiles: ['https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{x}/{y}.png'],
+        encoding: 'terrarium',
+        tileSize: 256,
+        maxzoom: 12,
+      },
+      terrain: {
+        type: 'raster-dem',
+        tiles: ['https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{x}/{y}.png'],
+        encoding: 'terrarium',
+        tileSize: 256,
+        maxzoom: 14,
+        attribution: 'Terrain: <a href="https://registry.opendata.aws/terrain-tiles/" target="_blank">AWS Terrain Tiles</a>',
       },
     },
     layers,
