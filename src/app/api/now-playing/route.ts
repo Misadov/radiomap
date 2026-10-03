@@ -86,8 +86,9 @@ async function readIcy(url: URL, redirects = 0): Promise<Result> {
     };
     const timer = setTimeout(() => finish(UNSUPPORTED), TIMEOUT_MS);
 
+    // HTTP/1.1 (some servers answer 1.0 requests with "426 Upgrade Required").
     const request =
-      `GET ${url.pathname || '/'}${url.search} HTTP/1.0\r\n` +
+      `GET ${url.pathname || '/'}${url.search} HTTP/1.1\r\n` +
       `Host: ${url.host}\r\n` +
       'Icy-MetaData: 1\r\n' +
       'User-Agent: RadioMap/2.0 (+https://github.com/misadov/radiomap)\r\n' +
@@ -98,21 +99,38 @@ async function readIcy(url: URL, redirects = 0): Promise<Result> {
       ? tlsConnect({ host: address, port, servername: isIP(host) ? undefined : host, ALPNProtocols: ['http/1.1'] }, () => socket.write(request))
       : netConnect({ host: address, port }, () => socket.write(request));
 
-    let buffer = Buffer.alloc(0);
+    let raw = Buffer.alloc(0); // everything received
+    let body = Buffer.alloc(0); // response body (de-chunked when needed)
+    let headerEnd = -1;
+    let chunked = false;
+    let chunkCursor = 0; // position in `raw` of the next chunk-size line
     let metaint = 0;
-    let cursor = -1; // start of the next audio block, once headers are parsed
+    let cursor = 0; // start of the next audio block in `body`
+
+    const readChunks = () => {
+      for (;;) {
+        const lineEnd = raw.indexOf('\r\n', chunkCursor);
+        if (lineEnd < 0) return;
+        const size = parseInt(raw.subarray(chunkCursor, lineEnd).toString('latin1'), 16);
+        if (!Number.isFinite(size) || size === 0) return finish({ title: null, supported: true });
+        const start = lineEnd + 2;
+        if (raw.length < start + size + 2) return;
+        body = Buffer.concat([body, raw.subarray(start, start + size)]);
+        chunkCursor = start + size + 2;
+      }
+    };
 
     socket.on('data', (chunk: Buffer) => {
-      buffer = Buffer.concat([buffer, chunk]);
-      if (buffer.length > MAX_BYTES) return finish({ title: null, supported: metaint > 0 });
+      raw = Buffer.concat([raw, chunk]);
+      if (raw.length > MAX_BYTES) return finish({ title: null, supported: metaint > 0 });
 
-      if (cursor < 0) {
-        const end = buffer.indexOf('\r\n\r\n');
+      if (headerEnd < 0) {
+        const end = raw.indexOf('\r\n\r\n');
         if (end < 0) {
-          if (buffer.length > 16 * 1024) finish(UNSUPPORTED);
+          if (raw.length > 16 * 1024) finish(UNSUPPORTED);
           return;
         }
-        const [statusLine, ...lines] = buffer.subarray(0, end).toString('latin1').split('\r\n');
+        const [statusLine, ...lines] = raw.subarray(0, end).toString('latin1').split('\r\n');
         const status = Number(/^(?:HTTP\/\d(?:\.\d)?|ICY)\s+(\d{3})/i.exec(statusLine)?.[1] ?? 0);
         const headers = new Map(
           lines.map((l) => {
@@ -125,16 +143,22 @@ async function readIcy(url: URL, redirects = 0): Promise<Result> {
           return finish(readIcy(new URL(location, url), redirects + 1).catch(() => UNSUPPORTED));
         }
         metaint = Number(headers.get('icy-metaint') ?? 0);
-        if (status !== 200 || !metaint || /chunked/i.test(headers.get('transfer-encoding') ?? '')) return finish(UNSUPPORTED);
-        cursor = end + 4;
+        if (status !== 200 || !metaint) return finish(UNSUPPORTED);
+        headerEnd = end + 4;
+        chunked = /chunked/i.test(headers.get('transfer-encoding') ?? '');
+        chunkCursor = headerEnd;
       }
 
+      if (chunked) readChunks();
+      else body = raw.subarray(headerEnd);
+      if (settled) return;
+
       // Walk audio/metadata blocks until one carries a title.
-      while (buffer.length > cursor + metaint) {
-        const length = buffer[cursor + metaint] * 16;
+      while (body.length > cursor + metaint) {
+        const length = body[cursor + metaint] * 16;
         const metaStart = cursor + metaint + 1;
-        if (buffer.length < metaStart + length) return;
-        if (length > 0) return finish({ title: parseMetadata(buffer.subarray(metaStart, metaStart + length)), supported: true });
+        if (body.length < metaStart + length) return;
+        if (length > 0) return finish({ title: parseMetadata(body.subarray(metaStart, metaStart + length)), supported: true });
         cursor = metaStart;
       }
     });

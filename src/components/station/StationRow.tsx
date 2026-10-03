@@ -18,7 +18,8 @@ export const ROW_HEIGHT = 62;
 function subtitle(station: Station, lang: ReturnType<typeof useLang>) {
   const where = stationLocation(station, lang);
   const genre = primaryGenre(station.genres, useData.getState().derived?.genreCounts);
-  const tag = genre ? genreLabel(genre, lang) : station.tags[0];
+  const raw = station.tags[0];
+  const tag = genre ? genreLabel(genre, lang) : raw ? raw.charAt(0).toLocaleUpperCase() + raw.slice(1) : '';
   return [where, tag].filter(Boolean).join(' · ');
 }
 

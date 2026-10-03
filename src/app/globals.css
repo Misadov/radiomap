@@ -141,6 +141,18 @@ button:disabled {
   -webkit-backdrop-filter: blur(22px) saturate(150%);
 }
 
+/* Phones: lighter blur over the WebGL map (cheaper to composite, panels are nearly opaque). */
+@media (max-width: 767px) {
+  .glass {
+    backdrop-filter: blur(12px) saturate(140%);
+    -webkit-backdrop-filter: blur(12px) saturate(140%);
+  }
+  .glass-strong {
+    backdrop-filter: blur(14px) saturate(140%);
+    -webkit-backdrop-filter: blur(14px) saturate(140%);
+  }
+}
+
 @utility accent-gradient {
   background: linear-gradient(135deg, #ffe0a0 0%, #ffb547 42%, #ff7a3d 100%);
 }

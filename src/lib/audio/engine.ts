@@ -34,7 +34,7 @@ const RESUME_RECONNECT_MS = 30_000;
 
 class AttemptError extends Error {
   constructor(
-    public readonly kind: 'blocked' | 'failed' | 'superseded',
+    public readonly kind: 'blocked' | 'failed' | 'unsupported' | 'superseded',
     message?: string,
   ) {
     super(message ?? kind);
@@ -105,6 +105,7 @@ export class AudioEngine {
     // hls.js fetches segments itself (CORS is required either way), so one attempt is enough.
     const corsModes = hls && !native ? [true] : analyse ? [true, false] : [false];
 
+    let unsupported = false;
     for (const cors of corsModes) {
       try {
         await this.attempt(request, { cors, hls: hls && !native, analyse }, token);
@@ -121,12 +122,13 @@ export class AudioEngine {
           this.emit('status', 'paused');
           return;
         }
+        if (err instanceof AttemptError && err.kind === 'unsupported') unsupported = true;
         this.teardown();
       }
     }
 
     const insecure = location.protocol === 'https:' && /^http:/i.test(request.url);
-    this.emit('error', insecure ? 'insecure' : 'unavailable');
+    this.emit('error', insecure ? 'insecure' : unsupported ? 'unsupported' : 'unavailable');
     this.emit('status', 'error');
   }
 
@@ -174,7 +176,8 @@ export class AudioEngine {
             this.hls = hls;
             hls.on(HlsLib.Events.ERROR, (_e, data) => {
               if (!data.fatal) return;
-              if (!settled) done(new AttemptError('failed', data.details));
+              const codec = /codec|incompatible/i.test(String(data.details));
+              if (!settled) done(new AttemptError(codec ? 'unsupported' : 'failed', data.details));
               else this.handleDrop(token);
             });
             hls.loadSource(request.url);
