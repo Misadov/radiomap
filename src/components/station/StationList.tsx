@@ -15,6 +15,7 @@ export function StationList({ items, limit }: { items: Item[]; limit?: number })
   const scrollRef = useContext(ScrollContext);
   const listRef = useRef<HTMLDivElement>(null);
   const [margin, setMargin] = useState(0);
+  const [attempt, retry] = useState(0);
   // Re-resolve stations when stream urls / ids arrive.
   useData((s) => s.version);
 
@@ -27,7 +28,12 @@ export function StationList({ items, limit }: { items: Item[]; limit?: number })
   useLayoutEffect(() => {
     const list = listRef.current;
     const scroller = scrollRef?.current;
-    if (!list || !scroller) return;
+    if (!list || !scroller) {
+      // The panel's ref is attached after its children mount: try again next frame.
+      if (attempt > 30) return;
+      const id = requestAnimationFrame(() => retry((n) => n + 1));
+      return () => cancelAnimationFrame(id);
+    }
     const measure = () => {
       const top = list.getBoundingClientRect().top - scroller.getBoundingClientRect().top + scroller.scrollTop;
       setMargin((m) => (Math.abs(m - top) > 0.5 ? top : m));
@@ -37,7 +43,7 @@ export function StationList({ items, limit }: { items: Item[]; limit?: number })
     ro.observe(scroller);
     if (scroller.firstElementChild) ro.observe(scroller.firstElementChild);
     return () => ro.disconnect();
-  }, [scrollRef]);
+  }, [scrollRef, attempt]);
 
   // eslint-disable-next-line react-hooks/incompatible-library -- not using the React Compiler
   const virtualizer = useVirtualizer({
