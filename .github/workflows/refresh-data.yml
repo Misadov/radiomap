@@ -1,0 +1,44 @@
+name: Refresh station data
+
+# Rebuilds public/data from radio-browser.info + GeoNames and commits the result,
+# which in turn redeploys the site. Runs monthly; can also be started by hand.
+on:
+  schedule:
+    - cron: '17 4 1 * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: refresh-data
+  cancel-in-progress: false
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      - name: Build datasets
+        run: npm run data -- --refresh
+
+      - name: Commit changes
+        run: |
+          if [ -z "$(git status --porcelain -- public/data src/data)" ]; then
+            echo "Station data unchanged."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A public/data src/data
+          git commit -m "Refresh station data ($(date -u +%Y-%m-%d))"
+          git push
