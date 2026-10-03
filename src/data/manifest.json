@@ -1,0 +1,12 @@
+{
+  "generated": "2026-10-03T21:57:50.008Z",
+  "stations": 44854,
+  "places": 6517,
+  "countries": 219,
+  "onMap": 26164,
+  "files": {
+    "places": "/data/places.ca3bc63709.json",
+    "stations": "/data/stations.c22114c4c2.json",
+    "streams": "/data/streams.af4cfc6b87.json"
+  }
+}

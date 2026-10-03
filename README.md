@@ -1,108 +1,81 @@
+# RadioMap
 
+**Live radio from every corner of the planet.** Spin a night-time globe, click a glowing city and listen to what's on air there right now.
 
+**[radiomap.vercel.app](https://radiomap.vercel.app)**
 
-# *This project was created using [Cursor AI](https://cursor.com/) for personal use. May contain bugs!*
+![RadioMap on desktop](docs/screenshot-desktop.jpg)
 
-
-# **[Online version](https://radiomap.vercel.app)**
-
-# RadioMap - Discover World Radio Stations
-
-A modern web application for discovering and listening to radio stations from around the world. Built with Next.js, TypeScript, and Tailwind CSS.
+<p align="center"><img src="docs/screenshot-mobile.jpg" alt="RadioMap on a phone" width="300"></p>
 
 ## Features
 
-- 🗺️ **Interactive Map**: Browse radio stations on a world map with clickable markers
-- 📻 **Station List**: Browse stations in a searchable list with filtering options
-- 🎵 **Audio Player**: Built-in audio player with play/pause, volume control, and station info
-- 🔍 **Advanced Search**: Filter by country, genre, language, and popularity
-- 🌍 **Worldwide Coverage**: Access to thousands of radio stations globally
+- **A real 3D globe.** WebGL rendering (MapLibre GL) with a custom "earth at night" style: every city with radio stations glows, brighter where there are more of them. It turns into a detailed street map as you zoom in.
+- **~45,000 stations, ~6,500 places, 219 countries.** Duplicates are merged, and every station that can be located is placed in its city or region.
+- **Instant search** across stations, cities, regions, countries and genres. It ignores accents and works in English and Russian ("jazz berlin", "москва", "sao paulo").
+- **Genre filter on the globe.** Pick *Jazz* and only the cities playing jazz stay lit, in the genre's colour.
+- **A player that copes with real-world streams.** It handles HLS streams (via a lazily loaded hls.js), reconnects when a stream drops, and fetches a fresh stream URL when the stored one has gone stale. When a station fails it says why and offers the next one.
+- **Live spectrum visualiser** on streams that allow it (CORS), and a calm ambient animation on the rest. The station on air pulses on the globe with the music.
+- **What's playing now.** The current track is read from the stream's ICY metadata, with links to find it on YouTube Music, Spotify or Apple Music.
+- **Favourites and history**, stored in the browser, with import/export. Favourites from the previous version of RadioMap are picked up automatically.
+- **Explore around you:** popular stations in the visible part of the map, nearby places, "Surprise me", "Near me" and similar stations.
+- **Phone-friendly.** A draggable bottom sheet, lock-screen / headphone controls (Media Session API), and it can be added to the home screen.
+- **Keyboard shortcuts:** `Space` play/pause · `/` search · `N`/`P` next/previous · `R` random · `F` favourite · `M` mute · `↑`/`↓` volume · `?` help.
+- **Shareable links:** `?station=<id>` opens a station, ready to play.
+- English and Russian UI (detected automatically, switchable). Map labels follow the UI language.
 
-## Tech Stack
+## How it works
 
-- **Frontend**: Next.js 14, React 18, TypeScript
-- **Styling**: Tailwind CSS
-- **Maps**: Leaflet, React Leaflet
-- **Icons**: Lucide React
-- **API**: Radio Browser API
-- **Audio**: HTML5 Audio API
+The browser never talks to a database at load time. Station data is prepared ahead of time and shipped as three static, content-hashed, immutable-cached JSON files:
 
-## Getting Started
+| File | Size (brotli) | Contents |
+| --- | --- | --- |
+| `public/data/places.*.json` | ~130 KB | Every dot on the globe — loaded first, so the globe is interactive straight away |
+| `public/data/stations.*.json` | ~1.3 MB | Names, logos, tags, genres, popularity — for lists and search |
+| `public/data/streams.*.json` | ~1.25 MB | Station ids and stream URLs — needed only to play |
 
-### Prerequisites
+They're produced by `scripts/build-data.mjs`, which:
 
-- Node.js 18+ 
-- npm or yarn
+1. downloads the full station list from [radio-browser.info](https://www.radio-browser.info/);
+2. drops broken and video streams, and merges duplicates (same stream, or same name in the same country), preferring HTTPS streams;
+3. **geocodes offline** with [GeoNames](https://www.geonames.org/). Coordinates are snapped to the city they belong to (suburbs fold into their metropolis). The free-text `state` field (`"Bayern"`, `"Sydney NSW"`, `"Kiangsu"`, `"Москва"`) is matched against city and region names in every language. Station names are scanned for city names (`"NRJ Le Havre"`, `"深圳音乐广播"`). Stations that can't be placed stay available through search and country pages;
+4. maps free-form tags onto 24 genres and ranks stations by popularity and playability.
 
-### Installation
+The site itself is a Next.js app. The only server code is `/api/now-playing`, which reads a stream's ICY metadata. It is guarded against requests to private networks and is cached at the edge for 15 seconds per stream.
 
-1. Clone the repository:
-```bash
-git clone <repository-url>
-cd radiomap
-```
+## Development
 
-2. Install dependencies:
+Requires Node.js 20.9+.
+
 ```bash
 npm install
+npm run dev        # http://localhost:3000
+npm run build      # production build (also copies MapLibre workers + flags into public/vendor)
+npm run lint
+npm run typecheck
 ```
 
-3. Start the development server:
-```bash
-npm run dev
-```
-
-4. Open [http://localhost:3000](http://localhost:3000) in your browser
-
-### Build for Production
+### Refreshing station data
 
 ```bash
-npm run build
-npm run start
+npm run data                 # fetch stations (cached 12 h) + GeoNames (cached 45 days), rebuild public/data
+npm run data -- --refresh    # ignore the station cache
+npm run data -- --offline    # rebuild from .cache only
 ```
 
-## Usage
+The first run downloads about 220 MB of GeoNames data into `.cache/`. A GitHub Action (`.github/workflows/refresh-data.yml`) runs this monthly and commits the result. It can also be started by hand from the *Actions* tab.
 
-### Map View
-- Toggle to "Map" mode to see radio stations plotted on an interactive world map
-- Click on blue markers to see station details
-- Click the play button to start listening to a station
-- Zoom and pan to explore different regions
+## Tech
 
-### List View
-- Toggle to "List" mode to browse stations in a grid layout
-- Use the search bar to find stations by name, country, or genre
-- Click "Filters" to access advanced filtering options:
-  - **Country**: Filter by specific countries
-  - **Genre**: Filter by music genres or content types
-  - **Language**: Filter by broadcast language
-  - **Min Votes**: Filter by popularity (user votes)
+[Next.js 16](https://nextjs.org) · React 19 · TypeScript · [MapLibre GL JS 6](https://maplibre.org) · Tailwind CSS 4 · Zustand · TanStack Virtual · hls.js
 
-### Audio Player
-- Appears at the bottom when a station is playing
-- Controls: Play/Pause, Volume, Station Info, Close
-- Shows current station details including country, genre, and bitrate
-- Click the info button for extended station details and website links
+## Credits
 
-## API
-
-This application uses the [Radio Browser API](https://www.radio-browser.info/) to fetch radio station data. The API provides:
-
-- Worldwide radio station database
-- Station metadata (country, genre, language, etc.)
-- Real-time station status
-- Geographic coordinates for mapping
-
-**Geocoding features require [MapBox](https://docs.mapbox.com/api/guides/) API key**
+- Station directory: [radio-browser.info](https://www.radio-browser.info/), a community project (public domain data).
+- Places: [GeoNames](https://www.geonames.org/), CC BY 4.0.
+- Map tiles: [OpenFreeMap](https://openfreemap.org) · [© OpenMapTiles](https://www.openmaptiles.org/) · data © [OpenStreetMap contributors](https://www.openstreetmap.org/copyright). Shaded relief from [Natural Earth](https://www.naturalearthdata.com/).
+- Flags: [flag-icons](https://github.com/lipis/flag-icons) (MIT).
 
 ## License
 
-This project is licensed under the MIT License - see the LICENSE file for details.
-
-## Acknowledgments
-
-- [Radio Browser](https://www.radio-browser.info/) for providing the radio station API
-- [MapBox](https://mapbox.com/) for geocoding stations without geo info 
-- [OpenStreetMap](https://www.openstreetmap.org/) for map tiles
-- [Leaflet](https://leafletjs.com/) for map functionality
-- [Lucide](https://lucide.dev/) for beautiful icons 
+MIT — see [LICENSE](LICENSE).
