@@ -50,7 +50,7 @@ Requires Node.js 20.9+.
 ```bash
 npm install
 npm run dev        # http://localhost:3000
-npm run build      # production build
+npm run build      # production build (also copies MapLibre workers + flags into public/vendor)
 npm run lint
 npm run typecheck
 ```
