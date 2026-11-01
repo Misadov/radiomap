@@ -1,12 +1,12 @@
 {
-  "generated": "2026-10-03T21:57:50.008Z",
-  "stations": 44854,
-  "places": 6517,
-  "countries": 219,
-  "onMap": 26164,
+  "generated": "2026-11-01T11:16:07.102Z",
+  "stations": 47570,
+  "places": 7033,
+  "countries": 226,
+  "onMap": 28231,
   "files": {
-    "places": "/data/places.ca3bc63709.json",
-    "stations": "/data/stations.c22114c4c2.json",
-    "streams": "/data/streams.af4cfc6b87.json"
+    "places": "/data/places.3f86244513.json",
+    "stations": "/data/stations.cd020f3df4.json",
+    "streams": "/data/streams.a1ca38b3bb.json"
   }
 }
